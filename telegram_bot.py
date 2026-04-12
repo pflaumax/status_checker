@@ -1,7 +1,7 @@
 import signal
 import time
 import requests
-from common import BOT_TOKEN, send_message, get_status_message
+from common import BOT_TOKEN, CHAT_ID, send_message, get_status_message, get_system_message
 
 running = True
 
@@ -31,8 +31,12 @@ while running:
             offset = update["update_id"] + 1
             msg = update.get("message", {})
             text = msg.get("text", "")
+            if str(msg.get("chat", {}).get("id")) != CHAT_ID:
+                continue
             if text == "/status":
                 send_message(get_status_message())
+            elif text == "/system":
+                send_message(get_system_message())
     except Exception as e:
         print(f"Error: {e}")
         time.sleep(5)
