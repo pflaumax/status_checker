@@ -97,9 +97,12 @@ def _get_disk_usage(path: str = "/mnt/hdd") -> str:
         import shutil
         total, used, free = shutil.disk_usage(path)
         pct = used / total * 100
-        total_gb = total / 1024**3
-        total_str = f"{total_gb / 1024:.1f}T" if total_gb >= 1024 else f"{total_gb:.1f}G"
-        return f"{used / 1024**3:.1f}G / {total_str} ({pct:.0f}%)"
+
+        def fmt(b: int) -> str:
+            gb = b / 1024**3
+            return f"{gb / 1024:.2f}T" if gb >= 1000 else f"{gb:.1f}G"
+
+        return f"{fmt(free)} free / {fmt(total)} ({pct:.0f}% used)"
     except Exception:
         return "N/A"
 

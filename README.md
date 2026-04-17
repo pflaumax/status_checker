@@ -24,7 +24,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 ───────────────────
 🖥 CPU Load (1/5/15m): 0.42 0.41 0.59
 💾 RAM: 1.99G/7.87G
-💿 HDD: 1638.4G / 1.9T (88%)
+💿 HDD: 229.0G free / 1.86T (88% used)
 🌡 Temp: 48.3°C
 ───────────────────
 ⏱ Uptime: 7 days, 07:42:25
@@ -33,7 +33,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 
 - Load average over 1min, 5min, 15min — under 4.0 = healthy (Pi 5 has 4 cores)
 - RAM: actual usage / total (reads `/proc/meminfo`, excludes cache)
-- HDD: used / total on `/mnt/hdd` (shows total in TB when ≥ 1024G)
+- HDD: free / total on `/mnt/hdd` (shows total in TB when ≥ 1000G)
 - Temp icon switches to 🔥 above 75°C
 
 ## Auto Alerts (cron)
