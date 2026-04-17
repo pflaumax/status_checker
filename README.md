@@ -24,6 +24,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 ───────────────────
 🖥 CPU Load (1/5/15m): 0.42 0.41 0.59
 💾 RAM: 1.99G/7.87G
+💿 HDD: 1638.4G / 1.9T (88%)
 🌡 Temp: 48.3°C
 ───────────────────
 ⏱ Uptime: 7 days, 07:42:25
@@ -32,6 +33,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 
 - Load average over 1min, 5min, 15min — under 4.0 = healthy (Pi 5 has 4 cores)
 - RAM: actual usage / total (reads `/proc/meminfo`, excludes cache)
+- HDD: used / total on `/mnt/hdd` (shows total in TB when ≥ 1024G)
 - Temp icon switches to 🔥 above 75°C
 
 ## Auto Alerts (cron)
@@ -42,6 +44,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 - `pflaumax.dev` is not responding
 - CPU temperature ≥ 85°C (Pi 5 throttle point)
 - CPU load average (15m) ≥ 4.0 (all 4 cores saturated)
+- HDD usage ≥ 90% on `/mnt/hdd`
 
 Example alert:
 

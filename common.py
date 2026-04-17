@@ -92,6 +92,27 @@ def _fmt_gb(kb: int) -> str:
     return f"{kb / 1024 / 1024:.2f}G"
 
 
+def _get_disk_usage(path: str = "/mnt/hdd") -> str:
+    try:
+        import shutil
+        total, used, free = shutil.disk_usage(path)
+        pct = used / total * 100
+        total_gb = total / 1024**3
+        total_str = f"{total_gb / 1024:.1f}T" if total_gb >= 1024 else f"{total_gb:.1f}G"
+        return f"{used / 1024**3:.1f}G / {total_str} ({pct:.0f}%)"
+    except Exception:
+        return "N/A"
+
+
+def _get_disk_pct(path: str = "/mnt/hdd") -> float | None:
+    try:
+        import shutil
+        total, used, _ = shutil.disk_usage(path)
+        return used / total * 100
+    except Exception:
+        return None
+
+
 def _get_cpu_temp() -> float | None:
     try:
         with open("/sys/class/thermal/thermal_zone0/temp") as f:
@@ -133,6 +154,7 @@ def get_system_message() -> str:
         used = total - mem.get("MemAvailable", 0)
         lines.append(f"💾 <b>RAM:</b> {_fmt_gb(used)}/{_fmt_gb(total)}")
 
+    lines.append(f"💿 <b>HDD:</b> {_get_disk_usage()}")
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
     lines.append("───────────────────")
     lines.append(_footer())
@@ -142,6 +164,7 @@ def get_system_message() -> str:
 
 TEMP_THRESHOLD = float(config.get("TEMP_THRESHOLD", "85.0"))
 LOAD_THRESHOLD = float(config.get("LOAD_THRESHOLD", "4.0"))
+DISK_THRESHOLD = float(config.get("DISK_THRESHOLD", "90.0"))
 
 
 def get_system_alerts() -> list[str]:
@@ -154,4 +177,7 @@ def get_system_alerts() -> list[str]:
         load_15m = float(load_str.split()[2])
         if load_15m >= LOAD_THRESHOLD:
             alerts.append(f"⚠️ <b>CPU overloaded for 15m+!</b> (Load: {load_15m})")
+    disk_pct = _get_disk_pct()
+    if disk_pct is not None and disk_pct >= DISK_THRESHOLD:
+        alerts.append(f"💿 <b>Disk almost full!</b> {disk_pct:.0f}% used on /mnt/hdd")
     return alerts
