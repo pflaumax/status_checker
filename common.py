@@ -19,7 +19,16 @@ def _require(key: str) -> str:
 BOT_TOKEN = _require("TELEGRAM_BOT_TOKEN")
 CHAT_ID = _require("TELEGRAM_CHAT_ID")
 WEBSITE_URL = _require("WEBSITE_URL")
+LAN_IP = config.get("LAN_IP", "192.168.50.173")
 SERVICES: list[str] = ["hp-bot", "funko-bot"]
+
+TAILSCALE_SERVICES: list[tuple[str, str, int]] = [
+    ("🎬", "Jellyfin", 8096),
+    ("⬇️", "qBittorrent", 8090),
+    ("📺", "Sonarr", 8989),
+    ("🎥", "Radarr", 7878),
+    ("🔍", "Prowlarr", 9696),
+]
 
 
 def send_message(text: str) -> None:
@@ -50,6 +59,43 @@ def check_website() -> bool:
 
 def _footer() -> str:
     return f"⏱ Uptime: {_get_uptime()}\n🕐 {datetime.now().strftime('%H:%M')}"
+
+
+def _get_tailscale_ip() -> str | None:
+    try:
+        result = subprocess.run(
+            ["tailscale", "ip", "-4"], capture_output=True, text=True
+        )
+        ip = result.stdout.strip()
+        return ip if ip.startswith("100.") else None
+    except Exception:
+        return None
+
+
+def _service_links(ip: str) -> str:
+    return "\n".join(
+        f"{icon} <b>{name}:</b> http://{ip}:{port}"
+        for icon, name, port in TAILSCALE_SERVICES
+    )
+
+
+def get_services_message() -> str:
+    ip = _get_tailscale_ip()
+    lines = ["<b>🌐  Remote Services</b>", "───────────────────"]
+    if ip:
+        lines.append(f"🔗 Tailscale: ✅ Online ({ip})\n")
+    else:
+        lines.append("🔗 Tailscale: ❌ Offline\n")
+    lines.append(f"<b>📡 LAN ({LAN_IP}):</b>")
+    lines.append(_service_links(LAN_IP))
+    if ip:
+        lines.append(f"\n<b>🌍 Tailscale ({ip}):</b>")
+        lines.append(_service_links(ip))
+    lines.append("───────────────────")
+    if ip:
+        lines.append("<i>💡 Tailscale VPN must be on your device</i>")
+    lines.append(f"🕐 {datetime.now().strftime('%H:%M')}")
+    return "\n".join(lines)
 
 
 def get_status_message() -> str:

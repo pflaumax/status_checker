@@ -36,6 +36,35 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 - HDD: free / total on `/mnt/hdd` (shows total in TB when ≥ 1000G)
 - Temp icon switches to 🔥 above 75°C
 
+### `/services` — remote access links
+
+```
+🌐  Remote Services
+───────────────────
+🔗 Tailscale: ✅ Online (100.102.29.66)
+
+📡 LAN (192.168.50.173):
+🎬 Jellyfin:     http://192.168.50.173:8096
+⬇️ qBittorrent:  http://192.168.50.173:8090
+📺 Sonarr:       http://192.168.50.173:8989
+🎥 Radarr:       http://192.168.50.173:7878
+🔍 Prowlarr:     http://192.168.50.173:9696
+
+🌍 Tailscale (100.102.29.66):
+🎬 Jellyfin:     http://100.102.29.66:8096
+⬇️ qBittorrent:  http://100.102.29.66:8090
+📺 Sonarr:       http://100.102.29.66:8989
+🎥 Radarr:       http://100.102.29.66:7878
+🔍 Prowlarr:     http://100.102.29.66:9696
+───────────────────
+💡 Tailscale VPN must be on your device
+🕐 18:03
+```
+
+- LAN links always shown (work on home network)
+- Tailscale section only shown when Tailscale is online
+- All links are clickable in Telegram
+
 ## Auto Alerts (cron)
 
 `status_checker.py` runs on a schedule and sends alerts when:
@@ -45,6 +74,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 - CPU temperature ≥ 85°C (Pi 5 throttle point)
 - CPU load average (15m) ≥ 4.0 (all 4 cores saturated)
 - HDD usage ≥ 90% on `/mnt/hdd`
+- Tailscale is offline
 
 Alerts use a **24-hour cooldown** — you get one notification when an issue starts, a reminder every 24h if it persists, and a ✅ recovery message when it clears. State is stored in `.alert_state.json`.
 
@@ -84,8 +114,8 @@ uv sync
 ## Files
 
 - `common.py` — shared config, checks, system stats, and message helpers
-- `telegram_bot.py` — long-running bot, responds to `/status` and `/system`
-- `status_checker.py` — cron script, alerts on service/system issues
+- `telegram_bot.py` — long-running bot, responds to `/status`, `/system`, and `/services`
+- `status_checker.py` — cron script, alerts on service/system/Tailscale issues
 
 ## Raspberry Pi Service Commands
 

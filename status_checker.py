@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from common import SERVICES, send_message, check_service, check_website, get_system_alerts
+from common import _get_tailscale_ip
 
 COOLDOWN = 24 * 3600  # 24 hours
 STATE_FILE = Path(__file__).parent / ".alert_state.json"
@@ -64,5 +65,13 @@ if alerts:
         _mark_alerted(state, "system")
 else:
     _clear_alert(state, "system", "System metrics back to normal.")
+
+# --- Tailscale check ---
+if not _get_tailscale_ip():
+    if _should_alert(state, "tailscale"):
+        send_message(f"⚠️ <b>Tailscale</b> is offline!\n🕐 {now}")
+        _mark_alerted(state, "tailscale")
+else:
+    _clear_alert(state, "tailscale", "<b>Tailscale</b> is back online!")
 
 _save_state(state)

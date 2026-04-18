@@ -1,7 +1,7 @@
 import signal
 import time
 import requests
-from common import BOT_TOKEN, CHAT_ID, send_message, get_status_message, get_system_message
+from common import BOT_TOKEN, CHAT_ID, send_message, get_status_message, get_system_message, get_services_message
 
 running = True
 
@@ -37,6 +37,8 @@ while running:
                 send_message(get_status_message())
             elif text == "/system":
                 send_message(get_system_message())
+            elif text == "/services":
+                send_message(get_services_message())
     except Exception as e:
         print(f"Error: {e}")
         time.sleep(5)
