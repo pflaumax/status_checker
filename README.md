@@ -46,6 +46,8 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 - CPU load average (15m) ≥ 4.0 (all 4 cores saturated)
 - HDD usage ≥ 90% on `/mnt/hdd`
 
+Alerts use a **24-hour cooldown** — you get one notification when an issue starts, a reminder every 24h if it persists, and a ✅ recovery message when it clears. State is stored in `.alert_state.json`.
+
 Example alert:
 
 ```

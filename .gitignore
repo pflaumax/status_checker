@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Alert state
+.alert_state.json
+
 # Python
 __pycache__/
 *.py[cod]
