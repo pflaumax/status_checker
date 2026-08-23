@@ -68,3 +68,4 @@ htmlcov/
 .mypy_ca
 
 .ruf_cache/
+.speedtest_history.jsonl

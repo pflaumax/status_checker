@@ -143,6 +143,23 @@ daemon actually answers.
 feature via `DOCKER_ENABLED`); containers outside it are surfaced in `/docker`
 as "not watched" rather than hidden, so a new service is visible.
 
+### Speedtest ledger
+
+Readings are measured on whatever device is on the network being tested and
+typed into `/speedtest`; the Pi only stores them. **The bot cannot detect the
+network itself** — Telegram relays messages, so it never sees the client's
+address. A Mini App talking to the Pi directly could, which is the only reason
+that route exists in the plan; do not add fingerprinting to the typed path.
+
+`.speedtest_history.jsonl` is append-only, one JSON object per line. `_load_readings()`
+skips unparseable lines so a crash mid-write costs one row, not the file. Every
+row carries `source` (`manual` today) so readings from different tools are not
+silently averaged together later.
+
+Network names are matched case-insensitively against existing ones by
+`_canonical_network()`, which is the only guard against `office` and `Office`
+becoming two networks.
+
 ### Inline keyboards / callback queries
 
 `/pihole` is the only command with buttons, so the bot loop handles `callback_query` updates as well as `message` ones. Two rules when touching this:
@@ -178,7 +195,7 @@ Thresholds (`TEMP_THRESHOLD`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` a
 The 16 issues found in review of the Pi-hole change are all fixed. Coverage as
 it stands:
 
-- 73 assertions across five scratch harnesses (stubbed Pi-hole, Docker and
+- 109 assertions across six scratch harnesses (stubbed Pi-hole, Docker and
   Telegram): bot handlers, Docker states and the command table, the real
   `status_checker.py` run in an isolated temp dir against a fake `common.py`
   for both the Pi-hole and container branches, and the unconfigured path.

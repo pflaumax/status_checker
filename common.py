@@ -1,4 +1,6 @@
 import html
+import json
+import math
 import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -605,3 +607,249 @@ def get_system_alerts() -> list[str]:
     if disk_pct is not None and disk_pct >= DISK_THRESHOLD:
         alerts.append(f"💿 <b>Disk almost full!</b> {disk_pct:.0f}% used on /mnt/hdd")
     return alerts
+
+
+# --- Speedtest ledger ---------------------------------------------------
+# Readings are taken on whatever device is on the network being measured and
+# typed in here; Telegram relays the message, so the bot never sees the
+# client's address and cannot identify the network on its own.
+
+SPEEDTEST_FILE = Path(__file__).parent / ".speedtest_history.jsonl"
+SPEEDTEST_MAX_MBPS = 100_000.0
+
+
+class Reading(NamedTuple):
+    ts: str
+    download: float
+    upload: float
+    ping: float
+    network: str
+    source: str
+
+
+def _load_readings() -> list[Reading]:
+    """Read the ledger, skipping any line a crash left half-written."""
+    readings: list[Reading] = []
+    damaged = 0
+    try:
+        text = SPEEDTEST_FILE.read_text()
+    except FileNotFoundError:
+        return readings
+    except Exception as e:
+        print(f"Speedtest history unreadable: {e}")
+        return readings
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            d = json.loads(line)
+            readings.append(
+                Reading(
+                    str(d["ts"]),
+                    float(d["download_mbps"]),
+                    float(d["upload_mbps"]),
+                    float(d["ping_ms"]),
+                    str(d["network"]),
+                    str(d.get("source", "manual")),
+                )
+            )
+        except Exception:
+            damaged += 1
+    if damaged:
+        print(f"Speedtest history: skipped {damaged} unreadable line(s)")
+    return readings
+
+
+def _append_reading(r: Reading) -> bool:
+    try:
+        with SPEEDTEST_FILE.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "ts": r.ts,
+                        "download_mbps": r.download,
+                        "upload_mbps": r.upload,
+                        "ping_ms": r.ping,
+                        "network": r.network,
+                        "source": r.source,
+                    }
+                )
+                + "\n"
+            )
+        return True
+    except Exception as e:
+        print(f"Could not append speedtest reading: {e}")
+        return False
+
+
+def _parse_speed(token: str) -> float | None:
+    """Accept 84.3 and 84,3 alike; reject anything not a sane speed."""
+    try:
+        value = float(token.replace(",", "."))
+    except ValueError:
+        return None
+    if math.isnan(value) or value < 0 or value > SPEEDTEST_MAX_MBPS:
+        return None
+    return value
+
+
+def _canonical_network(name: str, known: list[str]) -> str:
+    """Reuse an existing spelling so 'office' and 'Office' stay one network."""
+    for existing in known:
+        if existing.casefold() == name.casefold():
+            return existing
+    return name
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _by_network(readings: list[Reading]) -> dict[str, list[Reading]]:
+    grouped: dict[str, list[Reading]] = {}
+    for r in readings:
+        grouped.setdefault(r.network, []).append(r)
+    return grouped
+
+
+def _ordinal(n: int) -> str:
+    if 11 <= n % 100 <= 13:
+        return f"{n}th"
+    return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
+
+
+_SPEEDTEST_USAGE = (
+    "<b>📡  Speedtest</b>\n"
+    "───────────────────\n"
+    "Run a test in any speedtest app, then log it here:\n\n"
+    "<code>/speedtest &lt;down&gt; &lt;up&gt; &lt;ping&gt; &lt;network&gt;</code>\n\n"
+    "<i>Example:</i> <code>/speedtest 84.3 21.7 24 Nero Brasov</code>"
+)
+
+
+def get_speedtest_message(args: str) -> str:
+    tokens = args.split()
+    if not tokens:
+        text = _SPEEDTEST_USAGE
+        known = sorted(_by_network(_load_readings()))
+        if known:
+            text += "\n\n<b>Networks so far:</b>\n" + "\n".join(
+                f"  • {html.escape(n)}" for n in known
+            )
+        return text
+
+    if len(tokens) < 4:
+        return (
+            "⚠️ Need download, upload, ping and a network name.\n\n"
+            + _SPEEDTEST_USAGE
+        )
+
+    down, up, ping = (_parse_speed(t) for t in tokens[:3])
+    if down is None or up is None or ping is None:
+        return (
+            "⚠️ Download, upload and ping must be numbers.\n\n" + _SPEEDTEST_USAGE
+        )
+
+    readings = _load_readings()
+    grouped = _by_network(readings)
+    network = _canonical_network(" ".join(tokens[3:]), sorted(grouped))
+
+    reading = Reading(
+        datetime.now().isoformat(timespec="seconds"), down, up, ping, network, "manual"
+    )
+    if not _append_reading(reading):
+        return "⚠️ Could not write to the history file — nothing was saved."
+
+    same = [*grouped.get(network, []), reading]
+    lines = [
+        "<b>📡  Logged</b>",
+        "───────────────────",
+        f"⬇️ <b>{down:.1f}</b>  ⬆️ <b>{up:.1f}</b> Mbps  ⏱ <b>{ping:.0f}</b> ms",
+        f"🛜 <b>{html.escape(network)}</b>",
+        "───────────────────",
+    ]
+    lines.append(
+        f"{_ordinal(len(same))} test here · median "
+        f"{_median([r.download for r in same]):.1f} / "
+        f"{_median([r.upload for r in same]):.1f}"
+    )
+
+    # Context only means something once there is another network to compare to.
+    others = {n: rs for n, rs in grouped.items() if n != network}
+    if others:
+        best = max(others, key=lambda n: _median([r.download for r in others[n]]))
+        best_median = _median([r.download for r in others[best]])
+        if best_median > 0:
+            delta = (down - best_median) / best_median * 100
+            arrow = "▲" if delta >= 0 else "▼"
+            lines.append(
+                f"vs {html.escape(best)} ({best_median:.0f}): {delta:+.0f}% {arrow}"
+            )
+
+    lines.append(f"🕐 {datetime.now().strftime('%H:%M')}")
+    return "\n".join(lines)
+
+
+def get_speedhistory_message(args: str) -> str:
+    readings = _load_readings()
+    if not readings:
+        return (
+            "<b>📈  Speedtest history</b>\n"
+            "───────────────────\n"
+            "Nothing logged yet — see <code>/speedtest</code>."
+        )
+
+    grouped = _by_network(readings)
+    wanted = args.strip()
+
+    if wanted:
+        network = _canonical_network(wanted, sorted(grouped))
+        rows = grouped.get(network)
+        if not rows:
+            return (
+                f"⚠️ No readings for <b>{html.escape(wanted)}</b>.\n\n"
+                "<b>Networks so far:</b>\n"
+                + "\n".join(f"  • {html.escape(n)}" for n in sorted(grouped))
+            )
+        lines = [
+            f"<b>📈  {html.escape(network)}</b>",
+            "───────────────────",
+        ]
+        for r in sorted(rows, key=lambda r: r.ts, reverse=True)[:10]:
+            stamp = r.ts[5:16].replace("T", " ")
+            lines.append(
+                f"<code>{stamp}</code>  {r.download:.1f} / {r.upload:.1f}"
+                f"  <i>{r.ping:.0f}ms</i>"
+            )
+        lines.append("───────────────────")
+        lines.append(
+            f"{len(rows)} tests · median "
+            f"{_median([r.download for r in rows]):.1f} / "
+            f"{_median([r.upload for r in rows]):.1f}"
+        )
+        return "\n".join(lines)
+
+    # Grouped overview, fastest network first — comparing places is the point.
+    lines = ["<b>📈  Speedtest history</b>", "───────────────────"]
+    order = sorted(
+        grouped, key=lambda n: _median([r.download for r in grouped[n]]), reverse=True
+    )
+    for network in order:
+        rows = grouped[network]
+        lines.append(
+            f"<b>{html.escape(network)}</b> <i>({len(rows)} "
+            f"{'test' if len(rows) == 1 else 'tests'})</i>"
+        )
+        lines.append(
+            f"  {_median([r.download for r in rows]):.1f} / "
+            f"{_median([r.upload for r in rows]):.1f} Mbps"
+            f"  <i>{_median([r.ping for r in rows]):.0f}ms</i>"
+        )
+    lines.append("───────────────────")
+    hint = html.escape(order[0].split()[0].lower())
+    lines.append(f"<i>/speedhistory {hint} — one network in detail</i>")
+    return "\n".join(lines)

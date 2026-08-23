@@ -14,6 +14,8 @@ from common import (
     get_pihole_keyboard,
     get_pihole_message,
     get_services_message,
+    get_speedhistory_message,
+    get_speedtest_message,
     get_status_message,
     get_system_message,
     is_owner,
@@ -45,23 +47,28 @@ def send_pihole_panel() -> None:
     send_message(text, get_pihole_keyboard(status))
 
 
-COMMANDS: list[tuple[str, str, Callable[[], None]]] = [
-    ("status", "Service health", lambda: send_message(get_status_message())),
-    ("system", "Hardware stats", lambda: send_message(get_system_message())),
-    ("docker", "Container health", lambda: send_message(get_docker_message())),
-    ("services", "Remote access links", lambda: send_message(get_services_message())),
-    ("pihole", "DNS filtering and pause", send_pihole_panel),
+# Handlers take the argument string — everything after the command word — so
+# /speedtest can read its numbers. Handlers that need nothing ignore it.
+COMMANDS: list[tuple[str, str, Callable[[str], None]]] = [
+    ("status", "Service health", lambda _: send_message(get_status_message())),
+    ("system", "Hardware stats", lambda _: send_message(get_system_message())),
+    ("docker", "Container health", lambda _: send_message(get_docker_message())),
+    ("services", "Remote access links", lambda _: send_message(get_services_message())),
+    ("pihole", "DNS filtering and pause", lambda _: send_pihole_panel()),
+    ("speedtest", "Log a speedtest reading", lambda a: send_message(get_speedtest_message(a))),
+    ("speedhistory", "Speeds by network", lambda a: send_message(get_speedhistory_message(a))),
 ]
 
 
 def handle_command(text: str) -> None:
     if not text.startswith("/"):
         return
-    # Tolerate arguments and the /command@botname form used in groups.
-    name = text[1:].split()[0].split("@")[0].lower() if text[1:].strip() else ""
+    head, _, args = text[1:].partition(" ")
+    # Tolerate the /command@botname form used in groups.
+    name = head.split("@")[0].lower()
     for command, _description, handler in COMMANDS:
         if command == name:
-            handler()
+            handler(args.strip())
             return
 
 

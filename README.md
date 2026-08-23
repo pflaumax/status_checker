@@ -99,6 +99,54 @@ row in `/status`, no alerts, and `/pihole` just says it is not configured.
 The bot reaches Docker through `docker ps`, which needs its user in the
 `docker` group — already the case for `reiberry`.
 
+### `/speedtest` — log a reading
+
+Run a test in whichever speedtest app you trust, then record it:
+
+```
+/speedtest 84.3 21.7 24 Nero Brasov
+```
+
+```
+📡  Logged
+───────────────────
+⬇️ 84.3  ⬆️ 21.7 Mbps  ⏱ 24 ms
+🛜 Nero Brasov
+───────────────────
+1st test here · median 84.3 / 21.7
+vs Home (670): -87% ▼
+🕐 10:03
+```
+
+Arguments are `<download> <upload> <ping> <network name>`; the name may contain
+spaces and `84,3` is accepted alongside `84.3`.
+
+The network name has to be typed. Telegram relays your message, so the bot
+never sees the device's address and cannot work out which network you are on —
+the only thing that could is a Mini App talking to the Pi directly. Names are
+matched case-insensitively, so `office` and `Office` stay one network.
+
+### `/speedhistory` — speeds by network
+
+```
+📈  Speedtest history
+───────────────────
+Home (1 test)
+  669.9 / 552.4 Mbps  6ms
+Office (2 tests)
+  204.2 / 94.0 Mbps  12ms
+Nero Brasov (1 test)
+  84.3 / 21.7 Mbps  24ms
+───────────────────
+```
+
+Grouped by network and sorted fastest first, since comparing places is the
+point. `/speedhistory office` lists that network's readings individually.
+
+History lives in `.speedtest_history.jsonl`, one JSON object per line,
+append-only and gitignored. A line damaged by a crash is skipped rather than
+taking the file down with it.
+
 ### `/services` — remote access links
 
 ```
@@ -200,6 +248,7 @@ Pi-hole features entirely.
 ## Files
 
 - `common.py` — shared config, checks, system stats, and message helpers
+- `.speedtest_history.jsonl` — append-only speedtest ledger (gitignored)
 - `telegram_bot.py` — long-running bot; its `COMMANDS` table is the single
   source of truth for both the command dispatcher and the `/` menu registered
   with Telegram at startup, so a new command cannot ship without appearing in
