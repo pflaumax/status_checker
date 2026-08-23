@@ -12,23 +12,27 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 🌐 pflaumax.dev  ✅
 🤖 hp-bot  ✅
 🤖 funko-bot  ✅
+🐳 Containers  ✅ 6/6
+🛡 Pi-hole  ✅
 ───────────────────
-⏱ Uptime: 7 days, 07:42:25
-🕐 18:03
+⏱ Uptime: 23:24:44
+🕐 09:46
 ```
+
+The container and Pi-hole rows only appear when those features are configured.
 
 ### `/system` — hardware stats
 
 ```
 🫐  Raspberry Pi System
 ───────────────────
-🖥 CPU Load (1/5/15m): 0.42 0.41 0.59
-💾 RAM: 1.99G/7.87G
-💿 HDD: 229.0G free / 1.86T (88% used)
-🌡 Temp: 48.3°C
+🖥 CPU (1/5/15m): 0.00 0.00 0.00
+💾 RAM: 2.56G/7.87G
+💿 HDD: 253.6G free / 1.82T (86% used)
+🌡 Temp: 57.9°C
 ───────────────────
-⏱ Uptime: 7 days, 07:42:25
-🕐 18:03
+⏱ Uptime: 23:24:44
+🕐 09:46
 ```
 
 - Load average over 1min, 5min, 15min — under 4.0 = healthy (Pi 5 has 4 cores)
@@ -42,17 +46,19 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 🛡  Pi-hole
 ───────────────────
 State: ✅ Blocking
-📊 Queries today: 17,151
-🚫 Blocked: 1,643 (9.6%)
+📊 Queries today: 29,929
+🚫 Blocked: 2,649 (8.9%)
 📜 Blocklist: 93,516 domains
 💻 Active clients: 9
 
 Top blocked:
-  • mask.icloud.com (342)
-  • firebaselogging-pa.googleapis.com (268)
-  • www.googletagmanager.com (73)
+  • mask.icloud.com (687)
+  • firebaselogging-pa.googleapis.com (531)
+  • _dns.resolver.arpa (144)
+  • mask-h2.icloud.com (110)
+  • www.googletagmanager.com (84)
 ───────────────────
-🕐 18:03
+🕐 09:46
 ```
 
 Inline buttons pause blocking for **5 / 10 / 30 minutes**. Pi-hole owns the
@@ -66,6 +72,32 @@ so rather than claiming success.
 
 Leaving `PIHOLE_PASSWORD` empty switches the whole integration off: no Pi-hole
 row in `/status`, no alerts, and `/pihole` just says it is not configured.
+
+### `/docker` — container health
+
+```
+🐳  Containers
+───────────────────
+✅ jellyfin  running
+✅ qbittorrent  running
+✅ sonarr  running
+✅ radarr  running
+✅ prowlarr  running
+✅ flaresolverr  running
+───────────────────
+⏱ Uptime: 23:24:44
+🕐 09:46
+```
+
+- A container that is present but stopped shows ❌ with its state (`exited`,
+  `restarting`, …); one that no longer exists at all shows ❓ `not found`
+- Containers running outside the watch list are listed separately, so a new
+  service is visible rather than silently unmonitored
+- The watch list defaults to the six above and is overridden with
+  `DOCKER_CONTAINERS` in `.env` (comma-separated; empty disables the feature)
+
+The bot reaches Docker through `docker ps`, which needs its user in the
+`docker` group — already the case for `reiberry`.
 
 ### `/services` — remote access links
 
@@ -106,6 +138,7 @@ row in `/status`, no alerts, and `/pihole` just says it is not configured.
 - CPU load average (15m) ≥ 4.0 (all 4 cores saturated)
 - HDD usage ≥ 90% on `/mnt/hdd`
 - Tailscale is offline
+- A watched Docker container is not running, or the Docker daemon itself is unreachable
 - Pi-hole is not responding, or rejects the password (reported as separate causes)
 - Pi-hole blocking is disabled **indefinitely**, or reports a `failed` / `unknown` state
 
@@ -133,11 +166,14 @@ On the Raspberry Pi:
 crontab -e
 ```
 
-Add (every 5 minutes):
+What is actually installed — every 10 minutes, calling the venv interpreter
+directly rather than going through `uv`:
 
 ```
-*/5 * * * * cd /home/pi/status_checker && /home/pi/.local/bin/uv run status_checker.py
+*/10 * * * * /home/reiberry/personal/status_checker/.venv/bin/python3 /home/reiberry/personal/status_checker/status_checker.py
 ```
+
+Since cron bypasses `uv`, new dependencies only reach it after a `uv sync`.
 
 ## Setup
 
@@ -164,7 +200,10 @@ Pi-hole features entirely.
 ## Files
 
 - `common.py` — shared config, checks, system stats, and message helpers
-- `telegram_bot.py` — long-running bot, responds to `/status`, `/system`, `/services`, and `/pihole`
+- `telegram_bot.py` — long-running bot; its `COMMANDS` table is the single
+  source of truth for both the command dispatcher and the `/` menu registered
+  with Telegram at startup, so a new command cannot ship without appearing in
+  the menu
 - `status_checker.py` — cron script, alerts on service/system/Tailscale issues
 
 ## Raspberry Pi Service Commands
@@ -174,6 +213,11 @@ sudo systemctl restart status-bot
 sudo systemctl status status-bot
 journalctl -u status-bot -f
 ```
+
+The unit sets `Environment=PYTHONUNBUFFERED=1`. Without it Python block-buffers
+stdout into journald, and since every diagnostic here is a `print()`
+(`Pi-hole auth failed`, `Callback failed`, …), `journalctl -f` would show
+nothing until the process exited. Keep that line if the unit is ever rewritten.
 
 ## External Monitoring (UptimeRobot)
 

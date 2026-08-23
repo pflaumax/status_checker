@@ -35,8 +35,18 @@ Production (via `ssh pi`):
 ```bash
 ssh pi "sudo systemctl restart status-bot"   # the telegram_bot.py service
 ssh pi "journalctl -u status-bot -f"
-ssh pi "crontab -l"                          # status_checker.py runs every 5 min
+ssh pi "crontab -l"                          # status_checker.py, every 10 min
 ```
+
+Two deployment details that are easy to trip over:
+
+- **cron does not use `uv`.** It calls `.venv/bin/python3` directly, so a new
+  dependency reaches the bot (via `uv run`) before it reaches the cron alerts.
+  Run `uv sync` on the Pi after adding one.
+- **`Environment=PYTHONUNBUFFERED=1` in the unit is load-bearing.** Every
+  diagnostic in this codebase is a `print()`; without that line Python
+  block-buffers stdout into journald and `journalctl -f` stays empty until the
+  process exits. A backup of the unit sits at `status-bot.service.bak`.
 
 Inspecting Pi-hole directly, which needs no password thanks to `cli_pw`:
 
@@ -106,6 +116,33 @@ be a **private** chat id; pointing it at a group would disable the buttons for
 everyone, which is the intended fail-closed direction given they switch off DNS
 filtering network-wide.
 
+### Commands and the Telegram menu
+
+`telegram_bot.py` holds one `COMMANDS` table of `(name, description, handler)`.
+It drives the dispatcher *and* is registered with `setMyCommands` on startup, so
+the `/` menu cannot drift out of sync with what the bot actually answers — which
+it had, `/pihole` having shipped without a menu entry. Adding a command means
+adding one row; do not reintroduce an `elif` chain beside it.
+
+`handle_command` strips arguments and the `/command@botname` form used in
+groups, so handlers receive no text.
+
+### Docker containers
+
+The media stack runs in Docker, and `get_docker_states()` shells out to
+`docker ps -a` (the bot user is in the `docker` group, so no sudo). It returns
+`name -> state`, or `None` when the daemon itself did not answer.
+
+That `None` is load-bearing in `status_checker.py`: a dead daemon alerts **once**
+under the `docker` key and deliberately leaves every `container:<name>` key
+untouched. Marking them recovered would announce "jellyfin is back up!" for
+containers whose state is simply unknown. Container keys only change when the
+daemon actually answers.
+
+`DOCKER_CONTAINERS` is the watch list (env-overridable, empty disables the
+feature via `DOCKER_ENABLED`); containers outside it are surfaced in `/docker`
+as "not watched" rather than hidden, so a new service is visible.
+
 ### Inline keyboards / callback queries
 
 `/pihole` is the only command with buttons, so the bot loop handles `callback_query` updates as well as `message` ones. Two rules when touching this:
@@ -141,16 +178,18 @@ Thresholds (`TEMP_THRESHOLD`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` a
 The 16 issues found in review of the Pi-hole change are all fixed. Coverage as
 it stands:
 
-- 39 assertions across three scratch harnesses (stubbed Pi-hole + Telegram):
-  bot handlers, the real `status_checker.py` run in an isolated temp dir against
-  a fake `common.py`, and the unconfigured path.
+- 73 assertions across five scratch harnesses (stubbed Pi-hole, Docker and
+  Telegram): bot handlers, Docker states and the command table, the real
+  `status_checker.py` run in an isolated temp dir against a fake `common.py`
+  for both the Pi-hole and container branches, and the unconfigured path.
 - Read paths, `auth` vs `unreachable`, and logout-invalidates-the-session all
   verified against the live Pi-hole v6.4.3 over `ssh pi`.
 
-Not yet exercised: **an actual pause against the live Pi-hole.** Every write
-test so far has been a no-op (`{"blocking": true}` while already enabled) or
-stubbed, because a real pause switches off DNS filtering for the whole house.
-Press a button once after deploying and confirm the panel redraws.
+Exercised end to end on the live Pi-hole on 2026-08-23: a "⏸ 5m" press paused
+blocking, the panel redrew with a countdown, Pi-hole re-enabled itself at the
+5-minute mark with no involvement from the bot, and a cron pass that landed at
+09:20 *during* the pause correctly stayed silent instead of announcing a false
+recovery. No errors in the journal across the whole cycle.
 
 There is no test runner in the repo — the harnesses live in the session
 scratchpad. Anything worth keeping should be moved into the repo first.

@@ -32,6 +32,15 @@ PIHOLE_PASSWORD = config.get("PIHOLE_PASSWORD") or ""
 PIHOLE_ENABLED = bool(PIHOLE_PASSWORD)
 PAUSE_MINUTES: list[int] = [5, 10, 30]
 
+# Containers that are expected to be running. Override with a comma-separated
+# DOCKER_CONTAINERS; set it empty to drop container monitoring entirely.
+_DEFAULT_CONTAINERS = "jellyfin,qbittorrent,sonarr,radarr,prowlarr,flaresolverr"
+_containers_cfg = config.get("DOCKER_CONTAINERS")
+if _containers_cfg is None:
+    _containers_cfg = _DEFAULT_CONTAINERS
+DOCKER_CONTAINERS: list[str] = [c.strip() for c in _containers_cfg.split(",") if c.strip()]
+DOCKER_ENABLED = bool(DOCKER_CONTAINERS)
+
 TAILSCALE_SERVICES: list[tuple[str, str, int]] = [
     ("🎬", "Jellyfin", 8096),
     ("⬇️", "qBittorrent", 8090),
@@ -39,6 +48,14 @@ TAILSCALE_SERVICES: list[tuple[str, str, int]] = [
     ("🎥", "Radarr", 7878),
     ("🔍", "Prowlarr", 9696),
 ]
+
+
+def set_bot_commands(commands: list[tuple[str, str]]) -> None:
+    """Register the /-menu shown in Telegram clients."""
+    _telegram(
+        "setMyCommands",
+        {"commands": [{"command": c, "description": d} for c, d in commands]},
+    )
 
 
 def is_owner(telegram_id: Any) -> bool:
@@ -155,6 +172,59 @@ PIHOLE_TIMEOUT = 5  # loopback: keeps a hung FTL from stalling the bot loop
 
 PIHOLE_STATES = ("enabled", "disabled", "failed", "unknown")
 _UNREACHABLE_STATES = ("auth", "unreachable", "unconfigured")
+
+
+def get_docker_states() -> dict[str, str] | None:
+    """Map container name -> state ("running", "exited", ...)."""
+    try:
+        r = subprocess.run(
+            ["docker", "ps", "-a", "--format", "{{.Names}}\t{{.State}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except Exception as e:
+        print(f"docker ps failed: {e}")
+        return None
+    if r.returncode != 0:
+        print(f"docker ps failed: {r.stderr.strip()}")
+        return None
+    states: dict[str, str] = {}
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 2:
+            states[parts[0]] = parts[1]
+    return states
+
+
+def _docker_short() -> str:
+    states = get_docker_states()
+    if states is None:
+        return "❌ no daemon"
+    running = sum(1 for n in DOCKER_CONTAINERS if states.get(n) == "running")
+    total = len(DOCKER_CONTAINERS)
+    return f"{'✅' if running == total else '❌'} {running}/{total}"
+
+
+def get_docker_message() -> str:
+    lines = ["<b>🐳  Containers</b>", "───────────────────"]
+    states = get_docker_states()
+    if states is None:
+        lines.append("❌ <b>Docker is not responding</b>")
+    else:
+        for name in DOCKER_CONTAINERS:
+            state = states.get(name)
+            icon = "✅" if state == "running" else ("❓" if state is None else "❌")
+            lines.append(
+                f"{icon} {html.escape(name)}  <i>{html.escape(state or 'not found')}</i>"
+            )
+        extra = sorted(n for n in states if n not in DOCKER_CONTAINERS)
+        if extra:
+            lines.append(f"\n<i>Not watched: {html.escape(', '.join(extra))}</i>")
+    lines.append("───────────────────")
+    lines.append(_footer())
+    return "\n".join(lines)
 
 
 class PiholeStatus(NamedTuple):
@@ -406,6 +476,8 @@ def get_status_message() -> str:
     for s in SERVICES:
         icon = "✅" if check_service(s) else "❌"
         lines.append(f"🤖 {s}  {icon}")
+    if DOCKER_ENABLED:
+        lines.append(f"🐳 Containers  {_docker_short()}")
     if PIHOLE_ENABLED:
         lines.append(f"🛡 Pi-hole  {_pihole_short(get_pihole_status())}")
     lines.append("───────────────────")

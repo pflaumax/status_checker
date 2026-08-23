@@ -1,5 +1,6 @@
 import signal
 import time
+from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -9,6 +10,7 @@ from common import (
     answer_callback,
     apply_pihole_blocking,
     edit_message,
+    get_docker_message,
     get_pihole_keyboard,
     get_pihole_message,
     get_services_message,
@@ -16,6 +18,7 @@ from common import (
     get_system_message,
     is_owner,
     send_message,
+    set_bot_commands,
 )
 
 running = True
@@ -42,15 +45,24 @@ def send_pihole_panel() -> None:
     send_message(text, get_pihole_keyboard(status))
 
 
+COMMANDS: list[tuple[str, str, Callable[[], None]]] = [
+    ("status", "Service health", lambda: send_message(get_status_message())),
+    ("system", "Hardware stats", lambda: send_message(get_system_message())),
+    ("docker", "Container health", lambda: send_message(get_docker_message())),
+    ("services", "Remote access links", lambda: send_message(get_services_message())),
+    ("pihole", "DNS filtering and pause", send_pihole_panel),
+]
+
+
 def handle_command(text: str) -> None:
-    if text == "/status":
-        send_message(get_status_message())
-    elif text == "/system":
-        send_message(get_system_message())
-    elif text == "/services":
-        send_message(get_services_message())
-    elif text == "/pihole":
-        send_pihole_panel()
+    if not text.startswith("/"):
+        return
+    # Tolerate arguments and the /command@botname form used in groups.
+    name = text[1:].split()[0].split("@")[0].lower() if text[1:].strip() else ""
+    for command, _description, handler in COMMANDS:
+        if command == name:
+            handler()
+            return
 
 
 def _parse_action(data: str) -> tuple[bool, int | None] | None:
@@ -96,6 +108,7 @@ def handle_callback(query: dict[str, Any]) -> None:
 
 def main() -> None:
     print("Status bot started...")
+    set_bot_commands([(c, d) for c, d, _ in COMMANDS])
     offset = None
     while running:
         try:

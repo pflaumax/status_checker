@@ -4,11 +4,14 @@ from datetime import datetime
 from pathlib import Path
 
 from common import (
+    DOCKER_CONTAINERS,
+    DOCKER_ENABLED,
     PIHOLE_ENABLED,
     SERVICES,
     _get_tailscale_ip,
     check_service,
     check_website,
+    get_docker_states,
     get_pihole_status,
     get_system_alerts,
     send_message,
@@ -57,6 +60,26 @@ for service in SERVICES:
             _mark_alerted(state, key)
     else:
         _clear_alert(state, key, f"<b>{service}</b> is back up!")
+
+# --- Docker containers ---
+if DOCKER_ENABLED:
+    states = get_docker_states()
+    if states is None:
+        if _should_alert(state, "docker"):
+            send_message(f"⚠️ <b>Docker</b> is not responding!\n🕐 {now}")
+            _mark_alerted(state, "docker")
+    else:
+        _clear_alert(state, "docker", "<b>Docker</b> is responding again!")
+        for container in DOCKER_CONTAINERS:
+            key = f"container:{container}"
+            container_state = states.get(container)
+            if container_state == "running":
+                _clear_alert(state, key, f"<b>{container}</b> is back up!")
+            elif _should_alert(state, key):
+                send_message(
+                    f"⚠️ <b>{container}</b> is {container_state or 'missing'}!\n🕐 {now}"
+                )
+                _mark_alerted(state, key)
 
 # --- Website check ---
 if not check_website():
