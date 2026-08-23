@@ -14,7 +14,6 @@ from common import (
     get_pihole_keyboard,
     get_pihole_message,
     get_services_message,
-    get_speedhistory_message,
     get_speedtest_message,
     get_status_message,
     get_system_message,
@@ -55,8 +54,7 @@ COMMANDS: list[tuple[str, str, Callable[[str], None]]] = [
     ("docker", "Container health", lambda _: send_message(get_docker_message())),
     ("services", "Remote access links", lambda _: send_message(get_services_message())),
     ("pihole", "DNS filtering and pause", lambda _: send_pihole_panel()),
-    ("speedtest", "Log a speedtest reading", lambda a: send_message(get_speedtest_message(a))),
-    ("speedhistory", "Speeds by network", lambda a: send_message(get_speedhistory_message(a))),
+    ("speedtest", "Speeds by network, or log one", lambda a: send_message(get_speedtest_message(a))),
 ]
 
 

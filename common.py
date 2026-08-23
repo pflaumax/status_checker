@@ -43,6 +43,24 @@ if _containers_cfg is None:
 DOCKER_CONTAINERS: list[str] = [c.strip() for c in _containers_cfg.split(",") if c.strip()]
 DOCKER_ENABLED = bool(DOCKER_CONTAINERS)
 
+# The drive holding /mnt/hdd. Empty disables SMART monitoring. smartctl needs
+# raw device access, hence sudo, and an absolute path because the bot's PATH
+# has no /usr/sbin.
+SMART_DEVICE = config.get("SMART_DEVICE", "/dev/sdb") or ""
+SMART_BIN = config.get("SMART_BIN") or "/usr/sbin/smartctl"
+SMART_TEMP_THRESHOLD = float(config.get("SMART_TEMP_THRESHOLD", "55") or 55)
+SMART_ENABLED = bool(SMART_DEVICE)
+
+# Counters that should stay at zero for the life of a healthy drive. A drive
+# on its way out fills these in weeks before it stops working, which is the
+# whole reason for watching them.
+SMART_FAILURE_COUNTERS = {
+    "Reallocated_Sector_Ct": "reallocated sectors",
+    "Current_Pending_Sector": "sectors pending reallocation",
+    "Offline_Uncorrectable": "uncorrectable sectors",
+    "UDMA_CRC_Error_Count": "cable/CRC errors",
+}
+
 TAILSCALE_SERVICES: list[tuple[str, str, int]] = [
     ("🎬", "Jellyfin", 8096),
     ("⬇️", "qBittorrent", 8090),
@@ -581,6 +599,8 @@ def get_system_message() -> str:
         lines.append(f"💾 <b>RAM:</b> {_fmt_gb(used)}/{_fmt_gb(total)}")
 
     lines.append(f"💿 <b>HDD:</b> {_get_disk_usage()}")
+    if SMART_ENABLED:
+        lines.append(_smart_line(get_smart_status()))
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
     lines.append("───────────────────")
     lines.append(_footer())
@@ -682,12 +702,24 @@ def _append_reading(r: Reading) -> bool:
         return False
 
 
+def _looks_numeric(token: str) -> bool:
+    """Whether the user meant a measurement here, valid or not.
+
+    Kept separate from _parse_speed so that -5 routes to "that is not a valid
+    speed" rather than being mistaken for the name of a network.
+    """
+    try:
+        float(token.replace(",", "."))
+    except ValueError:
+        return False
+    return True
+
+
 def _parse_speed(token: str) -> float | None:
     """Accept 84.3 and 84,3 alike; reject anything not a sane speed."""
-    try:
-        value = float(token.replace(",", "."))
-    except ValueError:
+    if not _looks_numeric(token):
         return None
+    value = float(token.replace(",", "."))
     if math.isnan(value) or value < 0 or value > SPEEDTEST_MAX_MBPS:
         return None
     return value
@@ -723,24 +755,24 @@ def _ordinal(n: int) -> str:
 
 
 _SPEEDTEST_USAGE = (
-    "<b>📡  Speedtest</b>\n"
-    "───────────────────\n"
-    "Run a test in any speedtest app, then log it here:\n\n"
-    "<code>/speedtest &lt;down&gt; &lt;up&gt; &lt;ping&gt; &lt;network&gt;</code>\n\n"
-    "<i>Example:</i> <code>/speedtest 84.3 21.7 24 Nero Brasov</code>"
+    "<i>Log a reading:</i>  "
+    "<code>/speedtest &lt;down&gt; &lt;up&gt; &lt;ping&gt; &lt;network&gt;</code>\n"
+    "<i>One network:</i>  <code>/speedtest office</code>"
 )
 
 
 def get_speedtest_message(args: str) -> str:
+    """One command, three shapes.
+
+    Bare  -> the history, grouped by network.
+    Text  -> that network in detail.
+    Number-first -> a new reading to log.
+    """
     tokens = args.split()
     if not tokens:
-        text = _SPEEDTEST_USAGE
-        known = sorted(_by_network(_load_readings()))
-        if known:
-            text += "\n\n<b>Networks so far:</b>\n" + "\n".join(
-                f"  • {html.escape(n)}" for n in known
-            )
-        return text
+        return _speedhistory("")
+    if not _looks_numeric(tokens[0]):
+        return _speedhistory(args)
 
     if len(tokens) < 4:
         return (
@@ -751,7 +783,8 @@ def get_speedtest_message(args: str) -> str:
     down, up, ping = (_parse_speed(t) for t in tokens[:3])
     if down is None or up is None or ping is None:
         return (
-            "⚠️ Download, upload and ping must be numbers.\n\n" + _SPEEDTEST_USAGE
+            f"⚠️ Download, upload and ping must be numbers between 0 and "
+            f"{SPEEDTEST_MAX_MBPS:,.0f}.\n\n" + _SPEEDTEST_USAGE
         )
 
     readings = _load_readings()
@@ -794,13 +827,13 @@ def get_speedtest_message(args: str) -> str:
     return "\n".join(lines)
 
 
-def get_speedhistory_message(args: str) -> str:
+def _speedhistory(args: str) -> str:
     readings = _load_readings()
     if not readings:
         return (
-            "<b>📈  Speedtest history</b>\n"
+            "<b>📡  Speedtest</b>\n"
             "───────────────────\n"
-            "Nothing logged yet — see <code>/speedtest</code>."
+            "Nothing logged yet.\n\n" + _SPEEDTEST_USAGE
         )
 
     grouped = _by_network(readings)
@@ -814,6 +847,8 @@ def get_speedhistory_message(args: str) -> str:
                 f"⚠️ No readings for <b>{html.escape(wanted)}</b>.\n\n"
                 "<b>Networks so far:</b>\n"
                 + "\n".join(f"  • {html.escape(n)}" for n in sorted(grouped))
+                + "\n\n"
+                + _SPEEDTEST_USAGE
             )
         lines = [
             f"<b>📈  {html.escape(network)}</b>",
@@ -850,6 +885,99 @@ def get_speedhistory_message(args: str) -> str:
             f"  <i>{_median([r.ping for r in rows]):.0f}ms</i>"
         )
     lines.append("───────────────────")
-    hint = html.escape(order[0].split()[0].lower())
-    lines.append(f"<i>/speedhistory {hint} — one network in detail</i>")
+    lines.append(_SPEEDTEST_USAGE)
     return "\n".join(lines)
+
+
+# --- Drive health (SMART) ----------------------------------------------
+
+
+class SmartStatus(NamedTuple):
+    available: bool
+    passed: bool | None  # the drive's own overall self-assessment
+    temp_c: float | None
+    hours: int | None
+    counters: dict[str, int]  # attribute name -> raw value
+
+
+def get_smart_status() -> SmartStatus:
+    """Read the drive's own health log. Unavailable is not the same as unwell."""
+    if not SMART_ENABLED:
+        return SmartStatus(False, None, None, None, {})
+    try:
+        r = subprocess.run(
+            ["sudo", "-n", SMART_BIN, "--json", "-H", "-A", SMART_DEVICE],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        # smartctl uses its exit code as a bitfield; bits 0-1 mean it could not
+        # talk to the device at all, anything above that still yields output.
+        if r.returncode & 0b11:
+            print(f"smartctl could not read {SMART_DEVICE}: {r.stderr.strip()}")
+            return SmartStatus(False, None, None, None, {})
+        data = json.loads(r.stdout)
+    except Exception as e:
+        print(f"smartctl failed: {e}")
+        return SmartStatus(False, None, None, None, {})
+
+    # No self-assessment means we learned nothing, which must not read as "OK".
+    passed = (data.get("smart_status") or {}).get("passed")
+    if not isinstance(passed, bool):
+        print(f"smartctl returned no health verdict for {SMART_DEVICE}")
+        return SmartStatus(False, None, None, None, {})
+
+    counters: dict[str, int] = {}
+    for attr in (data.get("ata_smart_attributes") or {}).get("table") or []:
+        name = attr.get("name")
+        raw = (attr.get("raw") or {}).get("value")
+        if name in SMART_FAILURE_COUNTERS and isinstance(raw, int):
+            counters[name] = raw
+
+    return SmartStatus(
+        True,
+        passed,
+        (data.get("temperature") or {}).get("current"),
+        (data.get("power_on_time") or {}).get("hours"),
+        counters,
+    )
+
+
+def get_smart_alerts() -> list[str]:
+    """Problems worth waking someone for. Empty when the drive is fine."""
+    status = get_smart_status()
+    if not status.available:
+        return []  # unreadable SMART is not evidence of a failing drive
+    alerts = []
+    if status.passed is False:
+        alerts.append("🚨 <b>Drive self-assessment FAILED</b> — replace it")
+    for name, label in SMART_FAILURE_COUNTERS.items():
+        count = status.counters.get(name, 0)
+        if count > 0:
+            alerts.append(f"💿 <b>{count} {label}</b> on {html.escape(SMART_DEVICE)}")
+    if status.temp_c is not None and status.temp_c >= SMART_TEMP_THRESHOLD:
+        alerts.append(f"🌡 <b>Drive at {status.temp_c:.0f}°C</b>")
+    return alerts
+
+
+def _smart_line(status: SmartStatus) -> str:
+    if not status.available:
+        return "🩺 <b>Disk health:</b> unavailable"
+    problems = []
+    if status.passed is False:
+        problems.append("FAILED")
+    problems += [
+        f"{status.counters[n]} {label}"
+        for n, label in SMART_FAILURE_COUNTERS.items()
+        if status.counters.get(n, 0) > 0
+    ]
+    if problems:
+        return f"🩺 <b>Disk health:</b> ⚠️ {', '.join(problems)}"
+    extra = []
+    if status.temp_c is not None:
+        extra.append(f"{status.temp_c:.0f}°C")
+    if status.hours is not None:
+        extra.append(f"{status.hours:,}h")
+    suffix = f" · {' · '.join(extra)}" if extra else ""
+    return f"🩺 <b>Disk health:</b> ✅ OK{suffix}"

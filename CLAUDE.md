@@ -143,6 +143,26 @@ daemon actually answers.
 feature via `DOCKER_ENABLED`); containers outside it are surfaced in `/docker`
 as "not watched" rather than hidden, so a new service is visible.
 
+### Drive health (SMART)
+
+`get_smart_status()` shells out to `sudo -n /usr/sbin/smartctl --json`. Both
+details matter: raw device access needs sudo (the bot user has NOPASSWD), and
+the absolute path is required because the bot's PATH has no `/usr/sbin`.
+
+Two rules keep it honest:
+
+- **Unavailable is not unhealthy.** If smartctl cannot be run, or returns a
+  payload with no `smart_status.passed`, `get_smart_status()` reports
+  `available=False` and `get_smart_alerts()` returns nothing. Reporting "✅ OK"
+  from a payload that carried no verdict is the bug to avoid here.
+- smartctl's exit code is a **bitfield**, not a status. Only bits 0-1 mean it
+  could not talk to the device; higher bits flag conditions that still come
+  with usable output, so never test `returncode != 0`.
+
+The counters in `SMART_FAILURE_COUNTERS` should be zero for the drive's whole
+life; any non-zero value alerts. Health shows as a line inside `/system` rather
+than its own command — the command list is deliberately kept short.
+
 ### Speedtest ledger
 
 Readings are measured on whatever device is on the network being tested and
@@ -151,7 +171,9 @@ network itself** — Telegram relays messages, so it never sees the client's
 address. A Mini App talking to the Pi directly could, which is the only reason
 that route exists in the plan; do not add fingerprinting to the typed path.
 
-`.speedtest_history.jsonl` is append-only, one JSON object per line. `_load_readings()`
+`/speedtest` is one command with three shapes: bare shows the grouped history,
+a text argument is a network name to detail, a numeric first argument is a new
+reading. `.speedtest_history.jsonl` is append-only, one JSON object per line. `_load_readings()`
 skips unparseable lines so a crash mid-write costs one row, not the file. Every
 row carries `source` (`manual` today) so readings from different tools are not
 silently averaged together later.
@@ -195,7 +217,7 @@ Thresholds (`TEMP_THRESHOLD`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` a
 The 16 issues found in review of the Pi-hole change are all fixed. Coverage as
 it stands:
 
-- 109 assertions across six scratch harnesses (stubbed Pi-hole, Docker and
+- 138 assertions across seven scratch harnesses (stubbed Pi-hole, Docker and
   Telegram): bot handlers, Docker states and the command table, the real
   `status_checker.py` run in an isolated temp dir against a fake `common.py`
   for both the Pi-hole and container branches, and the unconfigured path.

@@ -13,6 +13,7 @@ from common import (
     check_website,
     get_docker_states,
     get_pihole_status,
+    get_smart_alerts,
     get_system_alerts,
     send_message,
 )
@@ -127,6 +128,17 @@ if PIHOLE_ENABLED:
             # Recovery only once filtering is genuinely back on -- a timed
             # pause must not clear the alert.
             _clear_alert(state, "pihole:blocking", "<b>Pi-hole</b> blocking is back on!")
+
+# --- Drive health ---
+smart_alerts = get_smart_alerts()
+if smart_alerts:
+    if _should_alert(state, "smart"):
+        send_message(
+            "🚨 <b>Drive health</b>\n\n" + "\n".join(smart_alerts) + f"\n\n🕐 {now}"
+        )
+        _mark_alerted(state, "smart")
+else:
+    _clear_alert(state, "smart", "Drive health back to normal.")
 
 # --- Tailscale check ---
 if not _get_tailscale_ip():

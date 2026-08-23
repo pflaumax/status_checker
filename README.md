@@ -29,7 +29,8 @@ The container and Pi-hole rows only appear when those features are configured.
 🖥 CPU (1/5/15m): 0.00 0.00 0.00
 💾 RAM: 2.56G/7.87G
 💿 HDD: 253.6G free / 1.82T (86% used)
-🌡 Temp: 57.9°C
+🩺 Disk health: ✅ OK · 32°C · 6,257h
+🌡 Temp: 59.5°C
 ───────────────────
 ⏱ Uptime: 23:24:44
 🕐 09:46
@@ -39,6 +40,10 @@ The container and Pi-hole rows only appear when those features are configured.
 - RAM: actual usage / total (reads `/proc/meminfo`, excludes cache)
 - HDD: free / total on `/mnt/hdd` (shows total in TB when ≥ 1000G)
 - Temp icon switches to 🔥 above 75°C
+- Disk health comes from the drive's own SMART log. A failing drive normally
+  reports bad sectors for weeks before it stops working, so the line turns to
+  ⚠️ with a count long before anything is lost. Needs `smartmontools`; the
+  drive is set with `SMART_DEVICE` (empty disables the check)
 
 ### `/pihole` — DNS filtering
 
@@ -99,9 +104,24 @@ row in `/status`, no alerts, and `/pihole` just says it is not configured.
 The bot reaches Docker through `docker ps`, which needs its user in the
 `docker` group — already the case for `reiberry`.
 
-### `/speedtest` — log a reading
+### `/speedtest` — speeds by network
 
-Run a test in whichever speedtest app you trust, then record it:
+Bare, it shows the history grouped by network, fastest first — comparing places
+is the point:
+
+```
+📈  Speedtest history
+───────────────────
+Home (1 test)
+  669.9 / 552.4 Mbps  6ms
+Office (2 tests)
+  204.2 / 94.0 Mbps  12ms
+Nero Brasov (1 test)
+  84.3 / 21.7 Mbps  24ms
+```
+
+Run a test in whichever speedtest app you trust, then record it by starting
+with the numbers:
 
 ```
 /speedtest 84.3 21.7 24 Nero Brasov
@@ -118,30 +138,15 @@ vs Home (670): -87% ▼
 🕐 10:03
 ```
 
+Anything that does not start with a number is read as a network name, so
+`/speedtest office` lists that network's readings individually.
+
 Arguments are `<download> <upload> <ping> <network name>`; the name may contain
 spaces and `84,3` is accepted alongside `84.3`.
 
 The network name has to be typed. Telegram relays your message, so the bot
-never sees the device's address and cannot work out which network you are on —
-the only thing that could is a Mini App talking to the Pi directly. Names are
-matched case-insensitively, so `office` and `Office` stay one network.
-
-### `/speedhistory` — speeds by network
-
-```
-📈  Speedtest history
-───────────────────
-Home (1 test)
-  669.9 / 552.4 Mbps  6ms
-Office (2 tests)
-  204.2 / 94.0 Mbps  12ms
-Nero Brasov (1 test)
-  84.3 / 21.7 Mbps  24ms
-───────────────────
-```
-
-Grouped by network and sorted fastest first, since comparing places is the
-point. `/speedhistory office` lists that network's readings individually.
+never sees the device's address and cannot work out which network you are on.
+Names match case-insensitively, so `office` and `Office` stay one network.
 
 History lives in `.speedtest_history.jsonl`, one JSON object per line,
 append-only and gitignored. A line damaged by a crash is skipped rather than
@@ -187,6 +192,7 @@ taking the file down with it.
 - HDD usage ≥ 90% on `/mnt/hdd`
 - Tailscale is offline
 - A watched Docker container is not running, or the Docker daemon itself is unreachable
+- The drive reports bad sectors, cable errors, a failed self-assessment, or runs hot
 - Pi-hole is not responding, or rejects the password (reported as separate causes)
 - Pi-hole blocking is disabled **indefinitely**, or reports a `failed` / `unknown` state
 
