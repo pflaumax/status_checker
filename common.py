@@ -40,7 +40,9 @@ _DEFAULT_CONTAINERS = "jellyfin,qbittorrent,sonarr,radarr,prowlarr,flaresolverr"
 _containers_cfg = config.get("DOCKER_CONTAINERS")
 if _containers_cfg is None:
     _containers_cfg = _DEFAULT_CONTAINERS
-DOCKER_CONTAINERS: list[str] = [c.strip() for c in _containers_cfg.split(",") if c.strip()]
+DOCKER_CONTAINERS: list[str] = [
+    c.strip() for c in _containers_cfg.split(",") if c.strip()
+]
 DOCKER_ENABLED = bool(DOCKER_CONTAINERS)
 
 # The drive holding /mnt/hdd. Empty disables SMART monitoring. smartctl needs
@@ -383,7 +385,9 @@ def get_pihole_keyboard(st: PiholeStatus) -> dict[str, Any] | None:
         return None
     if not st.blocking:
         return {
-            "inline_keyboard": [[{"text": "▶️ Enable now", "callback_data": "ph:resume"}]]
+            "inline_keyboard": [
+                [{"text": "▶️ Enable now", "callback_data": "ph:resume"}]
+            ]
         }
     return {
         "inline_keyboard": [
@@ -536,6 +540,7 @@ def _fmt_gb(kb: int) -> str:
 def _get_disk_usage(path: str = "/mnt/hdd") -> str:
     try:
         import shutil
+
         total, used, free = shutil.disk_usage(path)
         pct = used / total * 100
 
@@ -551,6 +556,7 @@ def _get_disk_usage(path: str = "/mnt/hdd") -> str:
 def _get_disk_pct(path: str = "/mnt/hdd") -> float | None:
     try:
         import shutil
+
         total, used, _ = shutil.disk_usage(path)
         return used / total * 100
     except Exception:
@@ -776,8 +782,7 @@ def get_speedtest_message(args: str) -> str:
 
     if len(tokens) < 4:
         return (
-            "⚠️ Need download, upload, ping and a network name.\n\n"
-            + _SPEEDTEST_USAGE
+            "⚠️ Need download, upload, ping and a network name.\n\n" + _SPEEDTEST_USAGE
         )
 
     down, up, ping = (_parse_speed(t) for t in tokens[:3])
@@ -906,18 +911,39 @@ def get_smart_status() -> SmartStatus:
         return SmartStatus(False, None, None, None, {})
     try:
         r = subprocess.run(
-            ["sudo", "-n", SMART_BIN, "--json", "-H", "-A", SMART_DEVICE],
+            # -n standby leaves a sleeping drive asleep. Without it this check
+            # would spin the disk up on every cron run, wearing out the drive
+            # it exists to protect.
+            [
+                "sudo",
+                "-n",
+                SMART_BIN,
+                "--json",
+                "-H",
+                "-A",
+                "-n",
+                "standby",
+                SMART_DEVICE,
+            ],
             capture_output=True,
             text=True,
             check=False,
             timeout=30,
         )
+        data = json.loads(r.stdout) if r.stdout.strip() else {}
+        # A sleeping drive reports nothing, and that is the desired outcome
+        # here, so it must not be logged or treated as a failure.
+        messages = " ".join(
+            str(m.get("string", ""))
+            for m in (data.get("smartctl") or {}).get("messages") or []
+        ).upper()
+        if "STANDBY" in messages or "LOW-POWER" in messages:
+            return SmartStatus(False, None, None, None, {})
         # smartctl uses its exit code as a bitfield; bits 0-1 mean it could not
         # talk to the device at all, anything above that still yields output.
         if r.returncode & 0b11:
             print(f"smartctl could not read {SMART_DEVICE}: {r.stderr.strip()}")
             return SmartStatus(False, None, None, None, {})
-        data = json.loads(r.stdout)
     except Exception as e:
         print(f"smartctl failed: {e}")
         return SmartStatus(False, None, None, None, {})
