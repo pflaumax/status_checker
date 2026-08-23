@@ -1,6 +1,10 @@
+import html
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Any, NamedTuple
 
 import requests
 from dotenv import dotenv_values
@@ -22,6 +26,12 @@ WEBSITE_URL = _require("WEBSITE_URL")
 LAN_IP = config.get("LAN_IP", "192.168.50.173")
 SERVICES: list[str] = ["hp-bot", "funko-bot"]
 
+PIHOLE_URL = (config.get("PIHOLE_URL") or "http://localhost:8080").rstrip("/")
+PIHOLE_PASSWORD = config.get("PIHOLE_PASSWORD") or ""
+
+PIHOLE_ENABLED = bool(PIHOLE_PASSWORD)
+PAUSE_MINUTES: list[int] = [5, 10, 30]
+
 TAILSCALE_SERVICES: list[tuple[str, str, int]] = [
     ("🎬", "Jellyfin", 8096),
     ("⬇️", "qBittorrent", 8090),
@@ -31,21 +41,64 @@ TAILSCALE_SERVICES: list[tuple[str, str, int]] = [
 ]
 
 
-def send_message(text: str) -> None:
+def is_owner(telegram_id: Any) -> bool:
+    """The bot serves exactly one chat; buttons toggle network-wide DNS."""
+    return str(telegram_id) == CHAT_ID
+
+
+def _telegram(method: str, payload: dict[str, Any]) -> None:
     try:
         r = requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
+            f"https://api.telegram.org/bot{BOT_TOKEN}/{method}",
+            json=payload,
+            timeout=15,
         )
+        if r.status_code == 400 and "message is not modified" in r.text:
+            return  # redrew a panel that had not changed; nothing to report
         r.raise_for_status()
     except Exception as e:
-        print(f"Failed to send message: {e}")
+        print(f"Telegram {method} failed: {e}")
+
+
+def send_message(text: str, reply_markup: dict[str, Any] | None = None) -> None:
+    payload: dict[str, Any] = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    _telegram("sendMessage", payload)
+
+
+def edit_message(
+    message_id: int, text: str, reply_markup: dict[str, Any] | None = None
+) -> None:
+    payload: dict[str, Any] = {
+        "chat_id": CHAT_ID,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    payload["reply_markup"] = reply_markup or {"inline_keyboard": []}
+    _telegram("editMessageText", payload)
+
+
+def answer_callback(callback_id: str, text: str = "") -> None:
+    _telegram("answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
 
 
 def check_service(name: str) -> bool:
-    result = subprocess.run(
-        ["systemctl", "is-active", name], capture_output=True, text=True
-    )
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as e:
+        print(f"Service check for {name} failed: {e}")
+        return False
     return result.stdout.strip() == "active"
 
 
@@ -98,6 +151,254 @@ def get_services_message() -> str:
     return "\n".join(lines)
 
 
+PIHOLE_TIMEOUT = 5  # loopback: keeps a hung FTL from stalling the bot loop
+
+PIHOLE_STATES = ("enabled", "disabled", "failed", "unknown")
+_UNREACHABLE_STATES = ("auth", "unreachable", "unconfigured")
+
+
+class PiholeStatus(NamedTuple):
+    state: str  # a PIHOLE_STATES value, or one of _UNREACHABLE_STATES
+    timer: int | None = None  # seconds left of a temporary pause
+
+    @property
+    def reachable(self) -> bool:
+        return self.state not in _UNREACHABLE_STATES
+
+    @property
+    def blocking(self) -> bool:
+        return self.state == "enabled"
+
+
+class _Session(NamedTuple):
+    sid: str | None
+    problem: str | None  # "auth" or "unreachable" whenever sid is None
+
+
+@contextmanager
+def _pihole_session() -> Iterator[_Session]:
+    """Open a Pi-hole v6 API session and always release it."""
+    sid: str | None = None
+    problem: str | None = None
+    try:
+        r = requests.post(
+            f"{PIHOLE_URL}/api/auth",
+            json={"password": PIHOLE_PASSWORD},
+            timeout=PIHOLE_TIMEOUT,
+        )
+        if r.status_code in (400, 401):
+            problem = "auth"
+        else:
+            r.raise_for_status()
+            sid = r.json().get("session", {}).get("sid")
+            problem = None if sid else "auth"
+    except Exception as e:
+        print(f"Pi-hole auth failed: {e}")
+        problem = "unreachable"
+    try:
+        yield _Session(sid, problem)
+    finally:
+        if sid:
+            try:
+                requests.delete(
+                    f"{PIHOLE_URL}/api/auth",
+                    headers={"X-FTL-SID": sid},
+                    timeout=PIHOLE_TIMEOUT,
+                )
+            except Exception:
+                pass
+
+
+def _pihole_get(
+    sid: str, path: str, params: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    try:
+        r = requests.get(
+            f"{PIHOLE_URL}/api/{path}",
+            headers={"X-FTL-SID": sid},
+            params=params,
+            timeout=PIHOLE_TIMEOUT,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"Pi-hole GET {path} failed: {e}")
+        return None
+
+
+def _as_status(data: dict[str, Any] | None) -> PiholeStatus:
+    """Map a /dns/blocking payload to a status. A missing payload means the
+    session was fine but this one call was not, which is unknown, not down."""
+    if data is None:
+        return PiholeStatus("unknown")
+    state = data.get("blocking")
+    timer = data.get("timer")
+    return PiholeStatus(
+        state if state in PIHOLE_STATES else "unknown",
+        int(timer) if isinstance(timer, (int, float)) and timer is not True else None,
+    )
+
+
+def get_pihole_status() -> PiholeStatus:
+    if not PIHOLE_ENABLED:
+        return PiholeStatus("unconfigured")
+    with _pihole_session() as session:
+        if session.sid is None:
+            return PiholeStatus(session.problem or "unreachable")
+        return _as_status(_pihole_get(session.sid, "dns/blocking"))
+
+
+def _fmt_remaining(secs: int) -> str:
+    h, rem = divmod(max(secs, 0), 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m:02d}m"
+    return f"{m}m {s:02d}s" if m else f"{s}s"
+
+
+_STATE_TEXT = {
+    "enabled": "✅ Blocking",
+    "failed": "⚠️ Pi-hole reports: failed",
+    "unknown": "⚠️ Unknown state",
+    "auth": "🔑 Password rejected",
+    "unreachable": "❌ Unreachable",
+    "unconfigured": "➖ Not configured",
+}
+_STATE_SHORT = {
+    "enabled": "✅",
+    "failed": "⚠️ failed",
+    "unknown": "⚠️",
+    "auth": "🔑 auth",
+    "unreachable": "❌",
+    "unconfigured": "➖",
+}
+
+
+def _pihole_state_text(st: PiholeStatus) -> str:
+    if st.state == "disabled":
+        if st.timer is not None:
+            return f"⏸ Paused ({_fmt_remaining(st.timer)} left)"
+        return "⏸ Disabled"
+    return _STATE_TEXT.get(st.state, "⚠️ Unknown state")
+
+
+def _pihole_short(st: PiholeStatus) -> str:
+    if st.state == "disabled":
+        return f"⏸ {_fmt_remaining(st.timer)}" if st.timer is not None else "⏸ off"
+    return _STATE_SHORT.get(st.state, "⚠️")
+
+
+def get_pihole_keyboard(st: PiholeStatus) -> dict[str, Any] | None:
+    if not st.reachable:
+        return None
+    if not st.blocking:
+        return {
+            "inline_keyboard": [[{"text": "▶️ Enable now", "callback_data": "ph:resume"}]]
+        }
+    return {
+        "inline_keyboard": [
+            [
+                {"text": f"⏸ {m}m", "callback_data": f"ph:pause:{m * 60}"}
+                for m in PAUSE_MINUTES
+            ]
+        ]
+    }
+
+
+def _num(value: Any) -> str | None:
+    """Thousands-separated, or None if Pi-hole sent something unexpected."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return f"{value:,}"
+
+
+def _pihole_panel(session: _Session) -> tuple[str, PiholeStatus]:
+    """Render the /pihole panel using an already-open session."""
+    lines = ["<b>🛡  Pi-hole</b>", "───────────────────"]
+    if session.sid is None:
+        st = PiholeStatus(session.problem or "unreachable")
+        summary = top = None
+    else:
+        st = _as_status(_pihole_get(session.sid, "dns/blocking"))
+        summary = _pihole_get(session.sid, "stats/summary")
+        top = _pihole_get(
+            session.sid, "stats/top_domains", {"blocked": "true", "count": 5}
+        )
+
+    lines.append(f"<b>State:</b> {_pihole_state_text(st)}")
+
+    # Every section is optional: Pi-hole may answer with a key present but null.
+    if summary:
+        q = summary.get("queries") or {}
+        total = _num(q.get("total"))
+        if total:
+            lines.append(f"📊 <b>Queries today:</b> {total}")
+        blocked = _num(q.get("blocked"))
+        if blocked:
+            pct = q.get("percent_blocked")
+            pct_str = f" ({pct:.1f}%)" if isinstance(pct, (int, float)) else ""
+            lines.append(f"🚫 <b>Blocked:</b> {blocked}{pct_str}")
+        gravity = _num((summary.get("gravity") or {}).get("domains_being_blocked"))
+        if gravity:
+            lines.append(f"📜 <b>Blocklist:</b> {gravity} domains")
+        active = _num((summary.get("clients") or {}).get("active"))
+        if active:
+            lines.append(f"💻 <b>Active clients:</b> {active}")
+
+    domains = (top or {}).get("domains") or []
+    if domains:
+        lines.append("\n<b>Top blocked:</b>")
+        for d in domains:
+            name = html.escape(str((d or {}).get("domain", "?")))
+            lines.append(f"  • {name} ({_num((d or {}).get('count')) or '?'})")
+
+    lines.append("───────────────────")
+    lines.append(f"🕐 {datetime.now().strftime('%H:%M')}")
+    return "\n".join(lines), st
+
+
+def _unconfigured_panel() -> str:
+    return (
+        "<b>🛡  Pi-hole</b>\n───────────────────\n"
+        "➖ Not configured — set <b>PIHOLE_PASSWORD</b> in <code>.env</code>\n"
+        "───────────────────\n"
+        f"🕐 {datetime.now().strftime('%H:%M')}"
+    )
+
+
+def get_pihole_message() -> tuple[str, PiholeStatus]:
+    """Build the /pihole panel. Returns the status too, so the caller can pick
+    the right keyboard without paying for a second login."""
+    if not PIHOLE_ENABLED:
+        return _unconfigured_panel(), PiholeStatus("unconfigured")
+    with _pihole_session() as session:
+        return _pihole_panel(session)
+
+
+def apply_pihole_blocking(
+    enabled: bool, seconds: int | None = None
+) -> tuple[bool, str, PiholeStatus]:
+    """Toggle blocking and redraw the panel inside the same session."""
+    if not PIHOLE_ENABLED:
+        return False, _unconfigured_panel(), PiholeStatus("unconfigured")
+    with _pihole_session() as session:
+        ok = False
+        if session.sid:
+            try:
+                r = requests.post(
+                    f"{PIHOLE_URL}/api/dns/blocking",
+                    json={"blocking": enabled, "timer": seconds},
+                    headers={"X-FTL-SID": session.sid},
+                    timeout=PIHOLE_TIMEOUT,
+                )
+                r.raise_for_status()
+                ok = True
+            except Exception as e:
+                print(f"Pi-hole blocking change failed: {e}")
+        text, st = _pihole_panel(session)
+        return ok, text, st
+
+
 def get_status_message() -> str:
     lines = ["<b>🫐  Raspberry Pi Status</b>", "───────────────────"]
     site_icon = "✅" if check_website() else "❌"
@@ -105,6 +406,8 @@ def get_status_message() -> str:
     for s in SERVICES:
         icon = "✅" if check_service(s) else "❌"
         lines.append(f"🤖 {s}  {icon}")
+    if PIHOLE_ENABLED:
+        lines.append(f"🛡 Pi-hole  {_pihole_short(get_pihole_status())}")
     lines.append("───────────────────")
     lines.append(_footer())
     return "\n".join(lines)

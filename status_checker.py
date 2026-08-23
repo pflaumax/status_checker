@@ -2,8 +2,17 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from common import SERVICES, send_message, check_service, check_website, get_system_alerts
-from common import _get_tailscale_ip
+
+from common import (
+    PIHOLE_ENABLED,
+    SERVICES,
+    _get_tailscale_ip,
+    check_service,
+    check_website,
+    get_pihole_status,
+    get_system_alerts,
+    send_message,
+)
 
 COOLDOWN = 24 * 3600  # 24 hours
 STATE_FILE = Path(__file__).parent / ".alert_state.json"
@@ -65,6 +74,36 @@ if alerts:
         _mark_alerted(state, "system")
 else:
     _clear_alert(state, "system", "System metrics back to normal.")
+
+# --- Pi-hole check ---
+if PIHOLE_ENABLED:
+    pihole = get_pihole_status()
+    if not pihole.reachable:
+        cause = (
+            "password was rejected"
+            if pihole.state == "auth"
+            else "is not responding"
+        )
+        if _should_alert(state, "pihole"):
+            send_message(f"⚠️ <b>Pi-hole</b> {cause}!\n🕐 {now}")
+            _mark_alerted(state, "pihole")
+    else:
+        _clear_alert(state, "pihole", "<b>Pi-hole</b> is back online!")
+        if pihole.state == "disabled" and pihole.timer is None:
+            trouble = "blocking is disabled indefinitely"
+        elif pihole.state in ("failed", "unknown"):
+            trouble = f"reports blocking state: {pihole.state}"
+        else:
+            trouble = None
+
+        if trouble:
+            if _should_alert(state, "pihole:blocking"):
+                send_message(f"⚠️ <b>Pi-hole</b> {trouble}!\n🕐 {now}")
+                _mark_alerted(state, "pihole:blocking")
+        elif pihole.blocking:
+            # Recovery only once filtering is genuinely back on -- a timed
+            # pause must not clear the alert.
+            _clear_alert(state, "pihole:blocking", "<b>Pi-hole</b> blocking is back on!")
 
 # --- Tailscale check ---
 if not _get_tailscale_ip():

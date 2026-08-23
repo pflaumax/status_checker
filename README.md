@@ -36,6 +36,37 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 - HDD: free / total on `/mnt/hdd` (shows total in TB when ≥ 1000G)
 - Temp icon switches to 🔥 above 75°C
 
+### `/pihole` — DNS filtering
+
+```
+🛡  Pi-hole
+───────────────────
+State: ✅ Blocking
+📊 Queries today: 17,151
+🚫 Blocked: 1,643 (9.6%)
+📜 Blocklist: 93,516 domains
+💻 Active clients: 9
+
+Top blocked:
+  • mask.icloud.com (342)
+  • firebaselogging-pa.googleapis.com (268)
+  • www.googletagmanager.com (73)
+───────────────────
+🕐 18:03
+```
+
+Inline buttons pause blocking for **5 / 10 / 30 minutes**. Pi-hole owns the
+timer and re-enables itself — the bot stores no timer state. While paused the
+panel shows `▶️ Enable now` instead, and `/status` shows `⏸ 9m 12s` rather
+than ❌, so a deliberate pause never looks like an outage.
+
+Only the account in `TELEGRAM_CHAT_ID` can press the buttons; they control DNS
+filtering for the whole network. If a press does not go through, the toast says
+so rather than claiming success.
+
+Leaving `PIHOLE_PASSWORD` empty switches the whole integration off: no Pi-hole
+row in `/status`, no alerts, and `/pihole` just says it is not configured.
+
 ### `/services` — remote access links
 
 ```
@@ -75,6 +106,11 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 - CPU load average (15m) ≥ 4.0 (all 4 cores saturated)
 - HDD usage ≥ 90% on `/mnt/hdd`
 - Tailscale is offline
+- Pi-hole is not responding, or rejects the password (reported as separate causes)
+- Pi-hole blocking is disabled **indefinitely**, or reports a `failed` / `unknown` state
+
+A timed pause is deliberate, so it is neither alerted nor reported as a recovery —
+the "blocking is back on" message waits until filtering is genuinely on again.
 
 Alerts use a **24-hour cooldown** — you get one notification when an issue starts, a reminder every 24h if it persists, and a ✅ recovery message when it clears. State is stored in `.alert_state.json`.
 
@@ -107,14 +143,28 @@ Add (every 5 minutes):
 
 ```bash
 cp .env.example .env
-# fill in TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WEBSITE_URL
+# fill in TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WEBSITE_URL, PIHOLE_PASSWORD
 uv sync
 ```
+
+### Pi-hole credentials
+
+Pi-hole v6 dropped the v5 API token — the REST API authenticates with a
+password and hands back a session id. Rather than putting the admin password in
+`.env`, create a dedicated one in the admin panel:
+
+**Settings → Web interface / API → Configure app password** → generate → paste
+into `PIHOLE_PASSWORD`.
+
+An app password can be revoked on its own without changing the password you log
+in with. `PIHOLE_URL` must include the web port — this install serves the
+interface on `8080`, not `80`. Leave `PIHOLE_PASSWORD` empty to disable the
+Pi-hole features entirely.
 
 ## Files
 
 - `common.py` — shared config, checks, system stats, and message helpers
-- `telegram_bot.py` — long-running bot, responds to `/status`, `/system`, and `/services`
+- `telegram_bot.py` — long-running bot, responds to `/status`, `/system`, `/services`, and `/pihole`
 - `status_checker.py` — cron script, alerts on service/system/Tailscale issues
 
 ## Raspberry Pi Service Commands
