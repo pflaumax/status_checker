@@ -25,7 +25,7 @@ def _require(key: str) -> str:
 BOT_TOKEN = _require("TELEGRAM_BOT_TOKEN")
 CHAT_ID = _require("TELEGRAM_CHAT_ID")
 WEBSITE_URL = _require("WEBSITE_URL")
-LAN_IP = config.get("LAN_IP", "192.168.50.173")
+LAN_IP = config.get("LAN_IP", "192.168.1.100")
 SERVICES: list[str] = ["hp-bot", "funko-bot"]
 
 PIHOLE_URL = (config.get("PIHOLE_URL") or "http://localhost:8080").rstrip("/")

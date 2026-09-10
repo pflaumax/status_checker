@@ -7,7 +7,7 @@ Repo: https://github.com/pflaumax/status_checker
 ## The code runs on a Raspberry Pi, not on this machine
 
 The bot lives at `~/personal/status_checker` on a Pi reachable through the SSH
-alias `pi` (`reiberry@192.168.50.173`, key-based, no password). Run anything
+alias `pi` (`pi@192.168.1.100`, key-based, no password). Run anything
 that needs real data there:
 
 ```bash

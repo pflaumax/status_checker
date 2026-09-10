@@ -157,21 +157,21 @@ taking the file down with it.
 ```
 🌐  Remote Services
 ───────────────────
-🔗 Tailscale: ✅ Online (100.102.29.66)
+🔗 Tailscale: ✅ Online (100.64.0.1)
 
-📡 LAN (192.168.50.173):
-🎬 Jellyfin:     http://192.168.50.173:8096
-⬇️ qBittorrent:  http://192.168.50.173:8090
-📺 Sonarr:       http://192.168.50.173:8989
-🎥 Radarr:       http://192.168.50.173:7878
-🔍 Prowlarr:     http://192.168.50.173:9696
+📡 LAN (192.168.1.100):
+🎬 Jellyfin:     http://192.168.1.100:8096
+⬇️ qBittorrent:  http://192.168.1.100:8090
+📺 Sonarr:       http://192.168.1.100:8989
+🎥 Radarr:       http://192.168.1.100:7878
+🔍 Prowlarr:     http://192.168.1.100:9696
 
-🌍 Tailscale (100.102.29.66):
-🎬 Jellyfin:     http://100.102.29.66:8096
-⬇️ qBittorrent:  http://100.102.29.66:8090
-📺 Sonarr:       http://100.102.29.66:8989
-🎥 Radarr:       http://100.102.29.66:7878
-🔍 Prowlarr:     http://100.102.29.66:9696
+🌍 Tailscale (100.64.0.1):
+🎬 Jellyfin:     http://100.64.0.1:8096
+⬇️ qBittorrent:  http://100.64.0.1:8090
+📺 Sonarr:       http://100.64.0.1:8989
+🎥 Radarr:       http://100.64.0.1:7878
+🔍 Prowlarr:     http://100.64.0.1:9696
 ───────────────────
 💡 Tailscale VPN must be on your device
 🕐 18:03
