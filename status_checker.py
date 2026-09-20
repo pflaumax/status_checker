@@ -6,9 +6,11 @@ from pathlib import Path
 from common import (
     DOCKER_CONTAINERS,
     DOCKER_ENABLED,
+    JOPLIN_ENABLED,
     PIHOLE_ENABLED,
     SERVICES,
     _get_tailscale_ip,
+    check_joplin,
     check_service,
     check_website,
     get_docker_states,
@@ -89,6 +91,15 @@ if not check_website():
         _mark_alerted(state, "website")
 else:
     _clear_alert(state, "website", "<b>pflaumax.dev</b> is back online!")
+
+# --- Joplin Server check ---
+if JOPLIN_ENABLED:
+    if not check_joplin():
+        if _should_alert(state, "joplin"):
+            send_message(f"⚠️ <b>Joplin Server</b> is not responding!\n🕐 {now}")
+            _mark_alerted(state, "joplin")
+    else:
+        _clear_alert(state, "joplin", "<b>Joplin Server</b> is back online!")
 
 # --- System alerts (temp, cpu, disk) ---
 alerts = get_system_alerts()

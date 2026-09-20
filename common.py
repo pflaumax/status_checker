@@ -36,7 +36,10 @@ PAUSE_MINUTES: list[int] = [5, 10, 30]
 
 # Containers that are expected to be running. Override with a comma-separated
 # DOCKER_CONTAINERS; set it empty to drop container monitoring entirely.
-_DEFAULT_CONTAINERS = "jellyfin,qbittorrent,sonarr,radarr,prowlarr,flaresolverr"
+_DEFAULT_CONTAINERS = (
+    "jellyfin,qbittorrent,sonarr,radarr,prowlarr,flaresolverr,"
+    "joplin-server,joplin-db"
+)
 _containers_cfg = config.get("DOCKER_CONTAINERS")
 if _containers_cfg is None:
     _containers_cfg = _DEFAULT_CONTAINERS
@@ -44,6 +47,12 @@ DOCKER_CONTAINERS: list[str] = [
     c.strip() for c in _containers_cfg.split(",") if c.strip()
 ]
 DOCKER_ENABLED = bool(DOCKER_CONTAINERS)
+
+# Public URL of Joplin Server (behind the Cloudflare Tunnel). Empty or absent
+# switches the check off, so pulling this code before editing .env cannot
+# raise a false outage.
+JOPLIN_URL = (config.get("JOPLIN_URL") or "").rstrip("/")
+JOPLIN_ENABLED = bool(JOPLIN_URL)
 
 # The drive holding /mnt/hdd. Empty disables SMART monitoring. smartctl needs
 # raw device access, hence sudo, and an absolute path because the bot's PATH
@@ -145,6 +154,16 @@ def check_website() -> bool:
     try:
         r = requests.get(WEBSITE_URL, timeout=10)
         return r.status_code == 200
+    except Exception:
+        return False
+
+
+def check_joplin() -> bool:
+    # /api/ping does not touch the database. A dead joplin-db shows up in the
+    # container check instead, so the two probes cover different failures.
+    try:
+        r = requests.get(f"{JOPLIN_URL}/api/ping", timeout=10)
+        return r.status_code == 200 and r.json().get("status") == "ok"
     except Exception:
         return False
 
@@ -500,6 +519,9 @@ def get_status_message() -> str:
     for s in SERVICES:
         icon = "✅" if check_service(s) else "❌"
         lines.append(f"🤖 {s}  {icon}")
+    if JOPLIN_ENABLED:
+        icon = "✅" if check_joplin() else "❌"
+        lines.append(f"📝 Joplin  {icon}")
     if DOCKER_ENABLED:
         lines.append(f"🐳 Containers  {_docker_short()}")
     if PIHOLE_ENABLED:

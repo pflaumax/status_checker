@@ -12,14 +12,15 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 🌐 pflaumax.dev  ✅
 🤖 hp-bot  ✅
 🤖 funko-bot  ✅
-🐳 Containers  ✅ 6/6
+📝 Joplin  ✅
+🐳 Containers  ✅ 8/8
 🛡 Pi-hole  ✅
 ───────────────────
 ⏱ Uptime: 23:24:44
 🕐 09:46
 ```
 
-The container and Pi-hole rows only appear when those features are configured.
+The Joplin, container and Pi-hole rows only appear when those features are configured.
 
 ### `/system` — hardware stats
 
@@ -89,6 +90,8 @@ row in `/status`, no alerts, and `/pihole` just says it is not configured.
 ✅ radarr  running
 ✅ prowlarr  running
 ✅ flaresolverr  running
+✅ joplin-server  running
+✅ joplin-db  running
 ───────────────────
 ⏱ Uptime: 23:24:44
 🕐 09:46
@@ -98,7 +101,7 @@ row in `/status`, no alerts, and `/pihole` just says it is not configured.
   `restarting`, …); one that no longer exists at all shows ❓ `not found`
 - Containers running outside the watch list are listed separately, so a new
   service is visible rather than silently unmonitored
-- The watch list defaults to the six above and is overridden with
+- The watch list defaults to the eight above and is overridden with
   `DOCKER_CONTAINERS` in `.env` (comma-separated; empty disables the feature)
 
 The bot reaches Docker through `docker ps`, which needs its user in the
@@ -192,6 +195,7 @@ taking the file down with it.
 - HDD usage ≥ 90% on `/mnt/hdd`
 - Tailscale is offline
 - A watched Docker container is not running, or the Docker daemon itself is unreachable
+- Joplin Server does not answer `/api/ping` (needs `JOPLIN_URL`; separate from its containers)
 - The drive reports bad sectors, cable errors, a failed self-assessment, or runs hot
 - Pi-hole is not responding, or rejects the password (reported as separate causes)
 - Pi-hole blocking is disabled **indefinitely**, or reports a `failed` / `unknown` state
@@ -234,6 +238,7 @@ Since cron bypasses `uv`, new dependencies only reach it after a `uv sync`.
 ```bash
 cp .env.example .env
 # fill in TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WEBSITE_URL, PIHOLE_PASSWORD
+# optional: JOPLIN_URL (public Joplin Server address; empty disables its check)
 uv sync
 ```
 

@@ -141,7 +141,25 @@ daemon actually answers.
 
 `DOCKER_CONTAINERS` is the watch list (env-overridable, empty disables the
 feature via `DOCKER_ENABLED`); containers outside it are surfaced in `/docker`
-as "not watched" rather than hidden, so a new service is visible.
+as "not watched" rather than hidden, so a new service is visible. The default is
+the six media containers plus `joplin-server` and `joplin-db`, so renaming any of
+them means editing `_DEFAULT_CONTAINERS` (the Pi's `.env` sets no override).
+
+### Joplin Server
+
+`check_joplin()` GETs `JOPLIN_URL + "/api/ping"` and wants HTTP 200 with
+`{"status": "ok"}`. Two things to keep in mind:
+
+- **Off when `JOPLIN_URL` is empty or absent** (`JOPLIN_ENABLED`), the same rule as
+  `PIHOLE_PASSWORD`: an existing deployment that pulls this code before its `.env`
+  is edited must not report a permanent false outage.
+- **`/api/ping` does not touch the database.** A dead `joplin-db` is caught by the
+  container check instead (its `restart: unless-stopped` shows up as `restarting`),
+  so the two probes cover different failures. The DB data directory is an ext4 loop
+  image on the HDD; if `/srv/joplin-pg` is unmounted Postgres fails on purpose.
+
+The probe goes out through Cloudflare (`https://joplin.pflaumax.dev`), so it also
+exercises the tunnel hostname rule, not just the local container.
 
 ### Drive health (SMART)
 
@@ -203,7 +221,7 @@ Thresholds (`TEMP_THRESHOLD`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` a
 
 ### Alert state machine
 
-`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `website`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
+`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `container:<name>`, `website`, `joplin`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
 
 ### Extending
 
