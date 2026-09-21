@@ -53,9 +53,9 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
   enables it. On 2026-09-21 the card corrupted files silently and this flag was
   the first thing that noticed
 - File integrity: result of the weekly `dpkg -V` scan of every package file
-  (`reiberry-rbi-backup/scripts/integrity-check.sh`, Wednesdays 03:00). ⚠️ if
-  any file is corrupted or the last scan is older than `INTEGRITY_MAX_DAYS`
-  (10). Read from `INTEGRITY_STATE`
+  (`reiberry-rbi-backup/scripts/integrity-check.sh`, daily at 03:00 while the
+  SD card is suspect, weekly afterwards). ⚠️ if any file is corrupted or the
+  last scan is older than `INTEGRITY_MAX_DAYS` (default 10; set 2 for a daily scan). Read from `INTEGRITY_STATE`
 - USB clone: when the boot clone on the USB flash drive was last refreshed. The
   drive is kept out of the Pi, so this is a reminder, not an outage: from
   `USB_CLONE_MAX_DAYS` (30) days on the line turns ⚠️ and the cron pass sends one
@@ -203,7 +203,7 @@ taking the file down with it.
 - Tailscale is offline
 - A watched Docker container is not running, or the Docker daemon itself is unreachable
 - The SD card filesystem reports ext4 errors (checked every pass)
-- The weekly integrity scan found corrupted package files, or has not run for 10 days
+- The integrity scan found corrupted package files, or has not run for `INTEGRITY_MAX_DAYS`
 - The USB clone is older than 30 days (a daily reminder to plug in the flash drive)
 - Joplin Server does not answer `/api/ping` (needs `JOPLIN_URL`; separate from its containers)
 - The drive reports bad sectors, cable errors, a failed self-assessment, or runs hot

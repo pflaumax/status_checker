@@ -173,7 +173,7 @@ Two independent checks, both off unless their `.env` key is set:
   only the superblock. As with SMART, an unreadable result is *unavailable*, not
   damage, and does not clear an open alert either.
 - **`INTEGRITY_STATE`**: JSON written by `reiberry-rbi-backup/scripts/integrity-check.sh`
-  (weekly `dpkg -V`, ~30 min). Alerts under `integrity` when it lists corrupted
+  (`dpkg -V`, ~20–30 min; daily while the SD card is suspect). Alerts under `integrity` when it lists corrupted
   files, when it is missing or unparseable, or when it is older than
   `INTEGRITY_MAX_DAYS`. Known-legitimate mismatches are filtered by that script's
   `integrity-allowlist.txt`, not here.
