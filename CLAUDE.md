@@ -162,6 +162,22 @@ them means editing `_DEFAULT_CONTAINERS` (the Pi's `.env` sets no override).
 The probe goes out through Cloudflare (`https://joplin.pflaumax.dev`), so it also
 exercises the tunnel hostname rule, not just the local container.
 
+### SD card integrity
+
+Added after the SD card silently corrupted 97 package files and part of the
+inode table on 2026-09-21 (`pi_system_config/incident_2026-09-21_sd_corruption.md`).
+Two independent checks, both off unless their `.env` key is set:
+
+- **`ROOTFS_DEVICE`**: every cron pass runs `sudo -n dumpe2fs -h` on it and alerts
+  under `rootfs` when the state contains `error` or `FS Error count` > 0. It reads
+  only the superblock. As with SMART, an unreadable result is *unavailable*, not
+  damage, and does not clear an open alert either.
+- **`INTEGRITY_STATE`**: JSON written by `reiberry-rbi-backup/scripts/integrity-check.sh`
+  (weekly `dpkg -V`, ~30 min). Alerts under `integrity` when it lists corrupted
+  files, when it is missing or unparseable, or when it is older than
+  `INTEGRITY_MAX_DAYS`. Known-legitimate mismatches are filtered by that script's
+  `integrity-allowlist.txt`, not here.
+
 ### USB clone reminder
 
 The boot clone of the SD card lives on a USB flash drive that is **kept out of
@@ -233,7 +249,7 @@ Thresholds (`TEMP_THRESHOLD`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` a
 
 ### Alert state machine
 
-`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `container:<name>`, `website`, `joplin`, `usb_clone`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
+`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `container:<name>`, `website`, `joplin`, `rootfs`, `integrity`, `usb_clone`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
 
 ### Extending
 

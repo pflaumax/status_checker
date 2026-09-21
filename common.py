@@ -624,6 +624,10 @@ def get_system_message() -> str:
     lines.append(f"💿 <b>HDD:</b> {_get_disk_usage()}")
     if SMART_ENABLED:
         lines.append(_smart_line(get_smart_status()))
+    if ROOTFS_ENABLED:
+        lines.append(_rootfs_line(get_rootfs_status()))
+    if INTEGRITY_ENABLED:
+        lines.append(_integrity_line(get_integrity_status()))
     if USB_CLONE_ENABLED:
         lines.append(_usb_clone_line())
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
@@ -1061,3 +1065,109 @@ def _usb_clone_line() -> str:
     if days >= USB_CLONE_MAX_DAYS:
         return f"💾 <b>USB clone:</b> ⚠️ {when} ({date}) — plug in the flash drive"
     return f"💾 <b>USB clone:</b> ✅ {when} ({date})"
+
+
+# The root filesystem on the SD card. On 2026-09-21 the card corrupted file data
+# and part of the inode table silently: no I/O errors, only ext4 noticing bad
+# checksums once the files were read. dumpe2fs -h reads just the superblock, so
+# checking its error flag every cron pass is cheap and catches that the moment
+# ext4 records it. Empty or absent disables the check (like JOPLIN_URL).
+ROOTFS_DEVICE = config.get("ROOTFS_DEVICE") or ""
+ROOTFS_ENABLED = bool(ROOTFS_DEVICE)
+DUMPE2FS_BIN = config.get("DUMPE2FS_BIN") or "/usr/sbin/dumpe2fs"
+
+# Written weekly by reiberry-rbi-backup/scripts/integrity-check.sh (dpkg -V of
+# every package file). The bot only reads it. Empty or absent disables it.
+INTEGRITY_STATE = config.get("INTEGRITY_STATE") or ""
+INTEGRITY_MAX_DAYS = int(config.get("INTEGRITY_MAX_DAYS", "10") or 10)
+INTEGRITY_ENABLED = bool(INTEGRITY_STATE)
+
+
+class RootfsStatus(NamedTuple):
+    available: bool
+    state: str  # "clean", "clean with errors", ...
+    errors: int  # ext4's own error counter; 0 when the line is absent
+
+
+def get_rootfs_status() -> RootfsStatus:
+    """Read ext4's superblock. Unavailable is not the same as damaged."""
+    if not ROOTFS_ENABLED:
+        return RootfsStatus(False, "", 0)
+    try:
+        r = subprocess.run(
+            ["sudo", "-n", DUMPE2FS_BIN, "-h", ROOTFS_DEVICE],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except Exception as e:
+        print(f"dumpe2fs failed: {e}")
+        return RootfsStatus(False, "", 0)
+    state, errors = "", 0
+    for line in r.stdout.splitlines():
+        if line.startswith("Filesystem state:"):
+            state = line.split(":", 1)[1].strip()
+        elif line.startswith("FS Error count:"):
+            try:
+                errors = int(line.split(":", 1)[1])
+            except ValueError:
+                pass
+    if not state:
+        print(f"dumpe2fs returned no state for {ROOTFS_DEVICE}: {r.stderr.strip()}")
+        return RootfsStatus(False, "", 0)
+    return RootfsStatus(True, state, errors)
+
+
+def rootfs_has_errors(status: RootfsStatus) -> bool:
+    return status.available and ("error" in status.state or status.errors > 0)
+
+
+def _rootfs_line(status: RootfsStatus) -> str:
+    if not status.available:
+        return "💽 <b>SD filesystem:</b> unavailable"
+    if rootfs_has_errors(status):
+        return (
+            f"💽 <b>SD filesystem:</b> ⚠️ {html.escape(status.state)}"
+            f" · {status.errors} ext4 errors"
+        )
+    return f"💽 <b>SD filesystem:</b> ✅ {html.escape(status.state)}"
+
+
+class IntegrityStatus(NamedTuple):
+    days: int  # since the last scan finished
+    date: str
+    mismatches: list[str]  # package files whose content no longer matches
+
+
+def get_integrity_status() -> IntegrityStatus | None:
+    """The last weekly dpkg -V scan, or None if it never ran or is unreadable."""
+    try:
+        data = json.loads(Path(INTEGRITY_STATE).read_text())
+        when = datetime.strptime(data["time"], "%Y-%m-%dT%H:%M:%S%z")
+        mismatches = [str(p) for p in data.get("mismatches") or []]
+    except Exception:
+        return None
+    days = (datetime.now(when.tzinfo) - when).days
+    return IntegrityStatus(days, when.strftime("%Y-%m-%d"), mismatches)
+
+
+def integrity_problem(status: IntegrityStatus | None) -> str | None:
+    """Why the integrity scan needs attention, or None when it is fine."""
+    if status is None:
+        return "no integrity scan recorded"
+    if status.mismatches:
+        return f"{len(status.mismatches)} corrupted package files"
+    if status.days >= INTEGRITY_MAX_DAYS:
+        return f"last integrity scan was {status.days} days ago"
+    return None
+
+
+def _integrity_line(status: IntegrityStatus | None) -> str:
+    problem = integrity_problem(status)
+    if status is None:
+        return f"🧬 <b>File integrity:</b> ⚠️ {problem}"
+    when = "today" if status.days == 0 else f"{status.days}d ago"
+    if problem:
+        return f"🧬 <b>File integrity:</b> ⚠️ {problem} (scan {when})"
+    return f"🧬 <b>File integrity:</b> ✅ {when} ({status.date})"

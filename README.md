@@ -31,6 +31,8 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
 💾 RAM: 2.56G/7.87G
 💿 HDD: 253.6G free / 1.82T (86% used)
 🩺 Disk health: ✅ OK · 32°C · 6,257h
+💽 SD filesystem: ✅ clean
+🧬 File integrity: ✅ 2d ago (2026-09-23)
 💾 USB clone: ✅ 3d ago (2026-09-21)
 🌡 Temp: 59.5°C
 ───────────────────
@@ -46,6 +48,14 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
   reports bad sectors for weeks before it stops working, so the line turns to
   ⚠️ with a count long before anything is lost. Needs `smartmontools`; the
   drive is set with `SMART_DEVICE` (empty disables the check).
+- SD filesystem: ext4's own error flag on the SD card, read from the
+  superblock with `dumpe2fs -h` (cheap, no disk scan). `ROOTFS_DEVICE`
+  enables it. On 2026-09-21 the card corrupted files silently and this flag was
+  the first thing that noticed
+- File integrity: result of the weekly `dpkg -V` scan of every package file
+  (`reiberry-rbi-backup/scripts/integrity-check.sh`, Wednesdays 03:00). ⚠️ if
+  any file is corrupted or the last scan is older than `INTEGRITY_MAX_DAYS`
+  (10). Read from `INTEGRITY_STATE`
 - USB clone: when the boot clone on the USB flash drive was last refreshed. The
   drive is kept out of the Pi, so this is a reminder, not an outage: from
   `USB_CLONE_MAX_DAYS` (30) days on the line turns ⚠️ and the cron pass sends one
@@ -192,6 +202,8 @@ taking the file down with it.
 - HDD usage ≥ 90% on `/mnt/hdd`
 - Tailscale is offline
 - A watched Docker container is not running, or the Docker daemon itself is unreachable
+- The SD card filesystem reports ext4 errors (checked every pass)
+- The weekly integrity scan found corrupted package files, or has not run for 10 days
 - The USB clone is older than 30 days (a daily reminder to plug in the flash drive)
 - Joplin Server does not answer `/api/ping` (needs `JOPLIN_URL`; separate from its containers)
 - The drive reports bad sectors, cable errors, a failed self-assessment, or runs hot
