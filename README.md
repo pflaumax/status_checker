@@ -13,7 +13,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 🤖 hp-bot  ✅
 🤖 funko-bot  ✅
 📝 Joplin  ✅
-🐳 Containers  ✅ 8/8
+🐳 Containers  ✅ 4/4
 🛡 Pi-hole  ✅
 ───────────────────
 ⏱ Uptime: 23:24:44
@@ -86,10 +86,6 @@ row in `/status`, no alerts, and `/pihole` just says it is not configured.
 ───────────────────
 ✅ jellyfin  running
 ✅ qbittorrent  running
-✅ sonarr  running
-✅ radarr  running
-✅ prowlarr  running
-✅ flaresolverr  running
 ✅ joplin-server  running
 ✅ joplin-db  running
 ───────────────────
@@ -101,7 +97,7 @@ row in `/status`, no alerts, and `/pihole` just says it is not configured.
   `restarting`, …); one that no longer exists at all shows ❓ `not found`
 - Containers running outside the watch list are listed separately, so a new
   service is visible rather than silently unmonitored
-- The watch list defaults to the eight above and is overridden with
+- The watch list defaults to the four above and is overridden with
   `DOCKER_CONTAINERS` in `.env` (comma-separated; empty disables the feature)
 
 The bot reaches Docker through `docker ps`, which needs its user in the
@@ -165,16 +161,10 @@ taking the file down with it.
 📡 LAN (192.168.1.100):
 🎬 Jellyfin:     http://192.168.1.100:8096
 ⬇️ qBittorrent:  http://192.168.1.100:8090
-📺 Sonarr:       http://192.168.1.100:8989
-🎥 Radarr:       http://192.168.1.100:7878
-🔍 Prowlarr:     http://192.168.1.100:9696
 
 🌍 Tailscale (100.64.0.1):
 🎬 Jellyfin:     http://100.64.0.1:8096
 ⬇️ qBittorrent:  http://100.64.0.1:8090
-📺 Sonarr:       http://100.64.0.1:8989
-🎥 Radarr:       http://100.64.0.1:7878
-🔍 Prowlarr:     http://100.64.0.1:9696
 ───────────────────
 💡 Tailscale VPN must be on your device
 🕐 18:03

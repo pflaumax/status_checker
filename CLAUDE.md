@@ -142,7 +142,8 @@ daemon actually answers.
 `DOCKER_CONTAINERS` is the watch list (env-overridable, empty disables the
 feature via `DOCKER_ENABLED`); containers outside it are surfaced in `/docker`
 as "not watched" rather than hidden, so a new service is visible. The default is
-the six media containers plus `joplin-server` and `joplin-db`, so renaming any of
+`jellyfin`, `qbittorrent`, `joplin-server` and `joplin-db` (the *arr services and
+`flaresolverr` were removed on 2026-09-21), so renaming any of
 them means editing `_DEFAULT_CONTAINERS` (the Pi's `.env` sets no override).
 
 ### Joplin Server

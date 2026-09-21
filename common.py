@@ -36,10 +36,7 @@ PAUSE_MINUTES: list[int] = [5, 10, 30]
 
 # Containers that are expected to be running. Override with a comma-separated
 # DOCKER_CONTAINERS; set it empty to drop container monitoring entirely.
-_DEFAULT_CONTAINERS = (
-    "jellyfin,qbittorrent,sonarr,radarr,prowlarr,flaresolverr,"
-    "joplin-server,joplin-db"
-)
+_DEFAULT_CONTAINERS = "jellyfin,qbittorrent,joplin-server,joplin-db"
 _containers_cfg = config.get("DOCKER_CONTAINERS")
 if _containers_cfg is None:
     _containers_cfg = _DEFAULT_CONTAINERS
@@ -75,9 +72,6 @@ SMART_FAILURE_COUNTERS = {
 TAILSCALE_SERVICES: list[tuple[str, str, int]] = [
     ("🎬", "Jellyfin", 8096),
     ("⬇️", "qBittorrent", 8090),
-    ("📺", "Sonarr", 8989),
-    ("🎥", "Radarr", 7878),
-    ("🔍", "Prowlarr", 9696),
 ]
 
 
