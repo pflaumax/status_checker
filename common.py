@@ -51,7 +51,8 @@ DOCKER_ENABLED = bool(DOCKER_CONTAINERS)
 JOPLIN_URL = (config.get("JOPLIN_URL") or "").rstrip("/")
 JOPLIN_ENABLED = bool(JOPLIN_URL)
 
-# The drive holding /mnt/hdd. Empty disables SMART monitoring. smartctl needs
+# The drive holding /mnt/hdd. Empty disables SMART monitoring. Set it to a
+# /dev/disk/by-id/ path in .env: sdX letters swap between boots. smartctl needs
 # raw device access, hence sudo, and an absolute path because the bot's PATH
 # has no /usr/sbin.
 SMART_DEVICE = config.get("SMART_DEVICE", "/dev/sdb") or ""

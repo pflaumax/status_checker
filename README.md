@@ -44,7 +44,8 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
 - Disk health comes from the drive's own SMART log. A failing drive normally
   reports bad sectors for weeks before it stops working, so the line turns to
   ⚠️ with a count long before anything is lost. Needs `smartmontools`; the
-  drive is set with `SMART_DEVICE` (empty disables the check)
+  drive is set with `SMART_DEVICE` (empty disables the check). Use its
+  `/dev/disk/by-id/` path, not `/dev/sdX`: the letters swap between boots
 
 ### `/pihole` — DNS filtering
 
