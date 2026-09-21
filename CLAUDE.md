@@ -165,7 +165,7 @@ exercises the tunnel hostname rule, not just the local container.
 ### SD card integrity
 
 Added after the SD card silently corrupted 97 package files and part of the
-inode table on 2026-09-21 (`pi_system_config/incident_2026-09-21_sd_corruption.md`).
+inode table on 2026-09-21 (`reiberry-rbi-backup/docs/incident_2026-09-21_sd_corruption.md`).
 Two independent checks, both off unless their `.env` key is set:
 
 - **`ROOTFS_DEVICE`**: every cron pass runs `sudo -n dumpe2fs -h` on it and alerts
