@@ -35,7 +35,7 @@ Production (via `ssh pi`):
 ```bash
 ssh pi "sudo systemctl restart status-bot"   # the telegram_bot.py service
 ssh pi "journalctl -u status-bot -f"
-ssh pi "crontab -l"                          # status_checker.py, every 10 min
+ssh pi "crontab -l"                          # status_checker.py, every 30 min
 ```
 
 Two deployment details that are easy to trip over:

@@ -224,11 +224,11 @@ On the Raspberry Pi:
 crontab -e
 ```
 
-What is actually installed — every 10 minutes, calling the venv interpreter
-directly rather than going through `uv`:
+What is actually installed — every 30 minutes (lowered from 10 on 2026-09-12 to cut SD
+writes), calling the venv interpreter directly rather than going through `uv`:
 
 ```
-*/10 * * * * /home/reiberry/personal/status_checker/.venv/bin/python3 /home/reiberry/personal/status_checker/status_checker.py
+*/30 * * * * /home/reiberry/personal/status_checker/.venv/bin/python3 /home/reiberry/personal/status_checker/status_checker.py
 ```
 
 Since cron bypasses `uv`, new dependencies only reach it after a `uv sync`.
