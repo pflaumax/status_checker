@@ -31,6 +31,7 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
 💾 RAM: 2.56G/7.87G
 💿 HDD: 253.6G free / 1.82T (86% used)
 🩺 Disk health: ✅ OK · 32°C · 6,257h
+💾 USB clone: ✅ 3d ago (2026-09-21)
 🌡 Temp: 59.5°C
 ───────────────────
 ⏱ Uptime: 23:24:44
@@ -44,7 +45,12 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
 - Disk health comes from the drive's own SMART log. A failing drive normally
   reports bad sectors for weeks before it stops working, so the line turns to
   ⚠️ with a count long before anything is lost. Needs `smartmontools`; the
-  drive is set with `SMART_DEVICE` (empty disables the check). Use its
+  drive is set with `SMART_DEVICE` (empty disables the check).
+- USB clone: when the boot clone on the USB flash drive was last refreshed. The
+  drive is kept out of the Pi, so this is a reminder, not an outage: from
+  `USB_CLONE_MAX_DAYS` (30) days on the line turns ⚠️ and the cron pass sends one
+  reminder a day until a fresh clone. The date is read from `USB_CLONE_STAMP`,
+  written by `reiberry-rbi-backup/scripts/weekly-clone.sh`; empty disables it. Use its
   `/dev/disk/by-id/` path, not `/dev/sdX`: the letters swap between boots
 
 ### `/pihole` — DNS filtering
@@ -186,6 +192,7 @@ taking the file down with it.
 - HDD usage ≥ 90% on `/mnt/hdd`
 - Tailscale is offline
 - A watched Docker container is not running, or the Docker daemon itself is unreachable
+- The USB clone is older than 30 days (a daily reminder to plug in the flash drive)
 - Joplin Server does not answer `/api/ping` (needs `JOPLIN_URL`; separate from its containers)
 - The drive reports bad sectors, cable errors, a failed self-assessment, or runs hot
 - Pi-hole is not responding, or rejects the password (reported as separate causes)

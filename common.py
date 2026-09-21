@@ -624,6 +624,8 @@ def get_system_message() -> str:
     lines.append(f"💿 <b>HDD:</b> {_get_disk_usage()}")
     if SMART_ENABLED:
         lines.append(_smart_line(get_smart_status()))
+    if USB_CLONE_ENABLED:
+        lines.append(_usb_clone_line())
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
     lines.append("───────────────────")
     lines.append(_footer())
@@ -1024,3 +1026,38 @@ def _smart_line(status: SmartStatus) -> str:
         extra.append(f"{status.hours:,}h")
     suffix = f" · {' · '.join(extra)}" if extra else ""
     return f"🩺 <b>Disk health:</b> ✅ OK{suffix}"
+
+
+# The USB flash drive holding the boot clone lives in a drawer, not in the Pi.
+# weekly-clone.sh (reiberry-rbi-backup) writes an ISO timestamp here after every
+# successful clone; the bot only reads it. Empty or absent disables the
+# feature, so pulling this code before editing .env cannot send a false nag.
+USB_CLONE_STAMP = config.get("USB_CLONE_STAMP") or ""
+USB_CLONE_MAX_DAYS = int(config.get("USB_CLONE_MAX_DAYS", "30") or 30)
+USB_CLONE_ENABLED = bool(USB_CLONE_STAMP)
+
+
+def get_usb_clone_age() -> tuple[int, str] | None:
+    """(whole days since the last good clone, its date), or None if unknown."""
+    try:
+        stamp = datetime.fromisoformat(Path(USB_CLONE_STAMP).read_text().strip())
+    except Exception:
+        return None
+    now = datetime.now(stamp.tzinfo)
+    return (now - stamp).days, stamp.strftime("%Y-%m-%d")
+
+
+def usb_clone_overdue() -> bool:
+    age = get_usb_clone_age()
+    return age is None or age[0] >= USB_CLONE_MAX_DAYS
+
+
+def _usb_clone_line() -> str:
+    age = get_usb_clone_age()
+    if age is None:
+        return "💾 <b>USB clone:</b> ⚠️ no successful clone recorded"
+    days, date = age
+    when = "today" if days == 0 else f"{days}d ago"
+    if days >= USB_CLONE_MAX_DAYS:
+        return f"💾 <b>USB clone:</b> ⚠️ {when} ({date}) — plug in the flash drive"
+    return f"💾 <b>USB clone:</b> ✅ {when} ({date})"

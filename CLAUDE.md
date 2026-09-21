@@ -162,6 +162,17 @@ them means editing `_DEFAULT_CONTAINERS` (the Pi's `.env` sets no override).
 The probe goes out through Cloudflare (`https://joplin.pflaumax.dev`), so it also
 exercises the tunnel hostname rule, not just the local container.
 
+### USB clone reminder
+
+The boot clone of the SD card lives on a USB flash drive that is **kept out of
+the Pi** and plugged in now and then. `reiberry-rbi-backup/scripts/weekly-clone.sh`
+writes an ISO timestamp to `USB_CLONE_STAMP` (`/var/lib/usb-clone/last-ok`) after a
+good clone; this repo only reads it. `get_usb_clone_age()` treats a missing or
+unparseable file as overdue. The feature is **off when `USB_CLONE_STAMP` is empty
+or absent**, like `JOPLIN_URL`, so a pull before the `.env` edit sends no false nag.
+An old clone is expected, so the reminder is phrased as one and uses the normal
+24h cooldown; its recovery message fires once a fresh clone lands.
+
 ### Drive health (SMART)
 
 `get_smart_status()` shells out to `sudo -n /usr/sbin/smartctl --json`. Both
@@ -222,7 +233,7 @@ Thresholds (`TEMP_THRESHOLD`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` a
 
 ### Alert state machine
 
-`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `container:<name>`, `website`, `joplin`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
+`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `container:<name>`, `website`, `joplin`, `usb_clone`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
 
 ### Extending
 

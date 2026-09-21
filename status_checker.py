@@ -9,7 +9,10 @@ from common import (
     JOPLIN_ENABLED,
     PIHOLE_ENABLED,
     SERVICES,
+    USB_CLONE_ENABLED,
+    USB_CLONE_MAX_DAYS,
     _get_tailscale_ip,
+    _usb_clone_line,
     check_joplin,
     check_service,
     check_website,
@@ -18,6 +21,7 @@ from common import (
     get_smart_alerts,
     get_system_alerts,
     send_message,
+    usb_clone_overdue,
 )
 
 COOLDOWN = 24 * 3600  # 24 hours
@@ -150,6 +154,23 @@ if smart_alerts:
         _mark_alerted(state, "smart")
 else:
     _clear_alert(state, "smart", "Drive health back to normal.")
+
+# --- USB clone reminder ---
+# The flash drive is kept out of the Pi, so an old clone is expected to happen;
+# this nags once a day (COOLDOWN) until a fresh clone clears it.
+if USB_CLONE_ENABLED:
+    if usb_clone_overdue():
+        if _should_alert(state, "usb_clone"):
+            send_message(
+                f"💾 <b>Time to refresh the USB clone</b> (older than {USB_CLONE_MAX_DAYS} days)\n\n"
+                f"{_usb_clone_line()}\n\n"
+                "Plug in the flash drive: it is cloned on Sunday at 05:00, or now with\n"
+                "<code>sudo ~/personal/reiberry-rbi-backup/scripts/weekly-clone.sh</code>\n"
+                f"🕐 {now}"
+            )
+            _mark_alerted(state, "usb_clone")
+    else:
+        _clear_alert(state, "usb_clone", "USB clone is up to date again.")
 
 # --- Tailscale check ---
 if not _get_tailscale_ip():
