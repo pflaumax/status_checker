@@ -2,6 +2,7 @@ import html
 import json
 import math
 import subprocess
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -588,6 +589,60 @@ def _get_cpu_temp() -> float | None:
         return None
 
 
+# The Pi 5 Active Cooler has a tachometer, so fan1_input is the real RPM, not
+# the requested speed. The hwmon number can change between boots, hence the glob.
+FAN_HWMON_GLOB = "hwmon/hwmon*"
+FAN_DEVICE = Path("/sys/devices/platform/cooling_fan")
+# The kernel starts the fan at 50°C and stops it below 45°C (5°C hysteresis), so
+# a still fan at or above this temperature means the fan or its cable is dead.
+FAN_ALERT_TEMP = float(config.get("FAN_ALERT_TEMP", "50") or 50)
+FAN_RECHECK_SECS = 5
+
+
+class FanStatus(NamedTuple):
+    rpm: int
+    pwm_pct: int  # speed the kernel asks for, 0-100
+
+
+def get_fan_status() -> FanStatus | None:
+    """None when there is no fan to read, which is not the same as a stopped fan."""
+    try:
+        hwmon = next(FAN_DEVICE.glob(FAN_HWMON_GLOB))
+        rpm = int((hwmon / "fan1_input").read_text().strip())
+        pwm = int((hwmon / "pwm1").read_text().strip())
+        return FanStatus(rpm, round(pwm / 255 * 100))
+    except Exception:
+        return None
+
+
+def _fan_stopped_while_hot() -> tuple[float, FanStatus] | None:
+    """(temp, fan) when the fan stands still at FAN_ALERT_TEMP or above.
+
+    The kernel polls the temperature about once a second and the fan needs a
+    moment to spin up, so a pass that lands right as the Pi crosses 50°C can
+    read 0 RPM from a healthy fan. One re-read a few seconds later rules that out.
+    """
+    for attempt in range(2):
+        if attempt:
+            time.sleep(FAN_RECHECK_SECS)
+        temp = _get_cpu_temp()
+        fan = get_fan_status()
+        if temp is None or fan is None or temp < FAN_ALERT_TEMP or fan.rpm > 0:
+            return None
+    return temp, fan
+
+
+def _fan_line(temp: float | None) -> str:
+    fan = get_fan_status()
+    if fan is None:
+        return "🌀 <b>Fan:</b> N/A"
+    if fan.rpm > 0:
+        return f"🌀 <b>Fan:</b> {fan.rpm:,} RPM · {fan.pwm_pct}%"
+    if temp is not None and temp >= FAN_ALERT_TEMP:
+        return f"🌀 <b>Fan:</b> ❌ stopped at {temp:.1f}°C"
+    return f"🌀 <b>Fan:</b> off (below {FAN_ALERT_TEMP:.0f}°C)"
+
+
 def _get_uptime() -> str:
     try:
         with open("/proc/uptime") as f:
@@ -631,6 +686,7 @@ def get_system_message() -> str:
     if USB_CLONE_ENABLED:
         lines.append(_usb_clone_line())
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
+    lines.append(_fan_line(temp))
     lines.append("───────────────────")
     lines.append(_footer())
 
@@ -647,6 +703,10 @@ def get_system_alerts() -> list[str]:
     temp = _get_cpu_temp()
     if temp is not None and temp >= TEMP_THRESHOLD:
         alerts.append(f"🔥 <b>Critical temperature:</b> {temp:.1f}°C")
+    stopped = _fan_stopped_while_hot()
+    if stopped is not None:
+        hot, _ = stopped
+        alerts.append(f"🌀 <b>Fan stopped!</b> 0 RPM at {hot:.1f}°C")
     load_str = _get_cpu_load()
     if load_str != "N/A":
         load_15m = float(load_str.split()[2])

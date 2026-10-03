@@ -189,6 +189,18 @@ or absent**, like `JOPLIN_URL`, so a pull before the `.env` edit sends no false 
 An old clone is expected, so the reminder is phrased as one and uses the normal
 24h cooldown; its recovery message fires once a fresh clone lands.
 
+### Fan
+
+`get_fan_status()` reads `fan1_input` (the Active Cooler's tachometer, so real
+RPM) and `pwm1` under `/sys/devices/platform/cooling_fan/hwmon/hwmon*`; the
+hwmon number is not stable across boots, hence the glob. `None` means no fan
+could be read and never alerts. The kernel's `step_wise` governor starts the
+fan at 50°C and stops it below 45°C, so 0 RPM is only a fault at
+`FAN_ALERT_TEMP` (default 50) or above. A pass landing as the Pi crosses 50°C
+can catch a healthy fan still spinning up, so `_fan_stopped_while_hot()` reads
+twice, `FAN_RECHECK_SECS` (5s) apart, and alerts only if both reads agree. The
+alert shares the `system` state key.
+
 ### Drive health (SMART)
 
 `get_smart_status()` shells out to `sudo -n /usr/sbin/smartctl --json`. Both
@@ -241,7 +253,7 @@ becoming two networks.
 
 `common.py` loads `.env` with `dotenv_values` (not `os.environ`) at import time, and `_require()` raises `ValueError` for a missing `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, or `WEBSITE_URL`. **Importing `common.py` without a populated `.env` fails immediately** — copy `.env.example` first. `CHAT_ID` stays a string and is compared as one.
 
-Thresholds (`TEMP_THRESHOLD`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` are optional env vars with defaults in `common.py`.
+Thresholds (`TEMP_THRESHOLD`, `FAN_ALERT_TEMP`, `LOAD_THRESHOLD`, `DISK_THRESHOLD`) and `LAN_IP` are optional env vars with defaults in `common.py`.
 
 ### Messages are HTML
 

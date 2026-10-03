@@ -35,6 +35,7 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
 🧬 File integrity: ✅ 2d ago (2026-09-23)
 💾 USB clone: ✅ 3d ago (2026-09-21)
 🌡 Temp: 59.5°C
+🌀 Fan: 3,742 RPM · 49%
 ───────────────────
 ⏱ Uptime: 23:24:44
 🕐 09:46
@@ -44,6 +45,10 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
 - RAM: actual usage / total (reads `/proc/meminfo`, excludes cache)
 - HDD: free / total on `/mnt/hdd` (shows total in TB when ≥ 1000G)
 - Temp icon switches to 🔥 above 75°C
+- Fan: real RPM from the Active Cooler's tachometer, plus the speed the kernel
+  asks for. The kernel keeps the fan off below 50°C (it stops below 45°C once
+  running), so `off (below 50°C)` is normal; `❌ stopped` means 0 RPM at or above
+  `FAN_ALERT_TEMP`
 - Disk health comes from the drive's own SMART log. A failing drive normally
   reports bad sectors for weeks before it stops working, so the line turns to
   ⚠️ with a count long before anything is lost. Needs `smartmontools`; the
@@ -198,6 +203,7 @@ taking the file down with it.
 - A service (`hp-bot`, `funko-bot`) is down
 - `pflaumax.dev` is not responding
 - CPU temperature ≥ 85°C (Pi 5 throttle point)
+- The fan reads 0 RPM while the CPU is at `FAN_ALERT_TEMP` (50°C) or above, twice, 5 seconds apart
 - CPU load average (15m) ≥ 4.0 (all 4 cores saturated)
 - HDD usage ≥ 90% on `/mnt/hdd`
 - Tailscale is offline
