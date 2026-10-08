@@ -173,10 +173,14 @@ Two independent checks, both off unless their `.env` key is set:
   only the superblock. As with SMART, an unreadable result is *unavailable*, not
   damage, and does not clear an open alert either.
 - **`INTEGRITY_STATE`**: JSON written by `reiberry-rbi-backup/scripts/integrity-check.sh`
-  (`dpkg -V`, ~20–30 min; daily while the SD card is suspect). Alerts under `integrity` when it lists corrupted
-  files, when it is missing or unparseable, or when it is older than
-  `INTEGRITY_MAX_DAYS`. Known-legitimate mismatches are filtered by that script's
-  `integrity-allowlist.txt`, not here.
+  (`dpkg -V`, ~30 min; daily while the SD card is suspect). Alerts under `integrity` when it lists corrupted
+  files, when `scan_error` is non-empty (`dpkg -V` aborted, so only part of the
+  packages was checked and an empty list proves nothing), when it is missing or
+  unparseable, or when it is older than `INTEGRITY_MAX_DAYS`. `scan_error` is
+  checked first. Known-legitimate mismatches are filtered by that script's
+  `integrity-allowlist.txt`, not here. Before 2026-10-08 the script dropped
+  dpkg's errors, and on most nights from 2026-09-26 the scan died halfway on a
+  corrupted `.list` file while the bot showed ✅.
 
 ### USB clone reminder
 
