@@ -1198,6 +1198,7 @@ class IntegrityStatus(NamedTuple):
     days: int  # since the last scan finished
     date: str
     mismatches: list[str]  # package files whose content no longer matches
+    error: str  # why dpkg -V stopped before the last package; "" when it finished
 
 
 def get_integrity_status() -> IntegrityStatus | None:
@@ -1206,16 +1207,22 @@ def get_integrity_status() -> IntegrityStatus | None:
         data = json.loads(Path(INTEGRITY_STATE).read_text())
         when = datetime.strptime(data["time"], "%Y-%m-%dT%H:%M:%S%z")
         mismatches = [str(p) for p in data.get("mismatches") or []]
+        error = str(data.get("scan_error") or "")
     except Exception:
         return None
     days = (datetime.now(when.tzinfo) - when).days
-    return IntegrityStatus(days, when.strftime("%Y-%m-%d"), mismatches)
+    return IntegrityStatus(days, when.strftime("%Y-%m-%d"), mismatches, error)
 
 
 def integrity_problem(status: IntegrityStatus | None) -> str | None:
     """Why the integrity scan needs attention, or None when it is fine."""
     if status is None:
         return "no integrity scan recorded"
+    # An aborted scan checked only part of the packages, so an empty
+    # mismatch list from it proves nothing (seen 2026-10: dpkg -V died on a
+    # corrupted .list file on most nights and the scan still read as clean).
+    if status.error:
+        return "integrity scan did not finish"
     if status.mismatches:
         return f"{len(status.mismatches)} corrupted package files"
     if status.days >= INTEGRITY_MAX_DAYS:

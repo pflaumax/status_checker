@@ -187,10 +187,12 @@ if INTEGRITY_ENABLED:
     if problem:
         if _should_alert(state, "integrity"):
             detail = ""
+            if integrity and integrity.error:
+                detail += f"\n\n<code>{html.escape(integrity.error)}</code>"
             if integrity and integrity.mismatches:
                 shown = "\n".join(f"• <code>{html.escape(p)}</code>" for p in integrity.mismatches[:8])
                 more = len(integrity.mismatches) - 8
-                detail = f"\n\n{shown}" + (f"\n… and {more} more" if more > 0 else "")
+                detail += f"\n\n{shown}" + (f"\n… and {more} more" if more > 0 else "")
             send_message(
                 f"🧬 <b>File integrity:</b> {html.escape(problem)}{detail}\n\n"
                 "Check with <code>sudo dpkg -V</code>, then reinstall the affected\n"
