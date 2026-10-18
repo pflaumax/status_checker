@@ -12,6 +12,7 @@ Telegram bot that monitors services, website, and system health on a Raspberry P
 🌐 pflaumax.dev  ✅
 🤖 hp-bot  ✅
 🤖 funko-bot  ✅
+🤖 sprout  ✅
 📝 Joplin  ✅
 🐳 Containers  ✅ 4/4
 🛡 Pi-hole  ✅
@@ -201,7 +202,7 @@ taking the file down with it.
 
 `status_checker.py` runs on a schedule and sends alerts when:
 
-- A service (`hp-bot`, `funko-bot`) is down
+- A service (`hp-bot`, `funko-bot`, `sprout`) is down
 - `pflaumax.dev` is not responding
 - CPU temperature ≥ 85°C (Pi 5 throttle point)
 - The fan reads 0 RPM while the CPU is at `FAN_ALERT_TEMP` (50°C) or above, twice, 5 seconds apart
