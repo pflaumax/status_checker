@@ -193,6 +193,29 @@ or absent**, like `JOPLIN_URL`, so a pull before the `.env` edit sends no false 
 An old clone is expected, so the reminder is phrased as one and uses the normal
 24h cooldown; its recovery message fires once a fresh clone lands.
 
+### Watched LAN devices
+
+Added for a robot vacuum that drops off Wi-Fi every week or two and is only
+noticed when someone wants to start a cleaning. `WATCH_DEVICES` (`alias=MAC`
+pairs, set only in the Pi's `.env`) lists devices that should query Pi-hole at
+least once a day; `device:<alias>` alerts after `WATCH_SILENT_HOURS` (30)
+without one. Off unless both `PIHOLE_PASSWORD` and `WATCH_DEVICES` are set.
+
+- **Silence decides, ping only explains.** The vacuum makes one burst of 16-20
+  queries a night (02:00-05:00) and none in between, so hours of silence are
+  normal; its longest normal gap over a month was 25.4h. The ping runs only
+  when an alert is about to go out, to tell "off Wi-Fi" from "on the network
+  but not reaching its cloud".
+- **Match by MAC, never by IP**: the router hands it a DHCP address with no
+  reservation. `network/devices` returns only 10 devices unless `max_devices`
+  is passed, which silently hid devices before it was.
+- **A Pi-hole that did not answer leaves `device:*` keys alone**, the same rule
+  as a dead Docker daemon and `container:*`.
+- It only sees devices that resolve through Pi-hole. Clients on the router's
+  second subnet use another resolver, and `listeningMode: LOCAL` would refuse
+  them anyway.
+- Keep real MACs out of the repo; `.env.example` holds a placeholder.
+
 ### Fan
 
 `get_fan_status()` reads `fan1_input` (the Active Cooler's tachometer, so real
@@ -265,7 +288,7 @@ Thresholds (`TEMP_THRESHOLD`, `FAN_ALERT_TEMP`, `LOAD_THRESHOLD`, `DISK_THRESHOL
 
 ### Alert state machine
 
-`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `container:<name>`, `website`, `joplin`, `rootfs`, `integrity`, `usb_clone`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
+`status_checker.py` keeps `.alert_state.json` (gitignored): `key -> epoch of last alert`. Keys are `service:<name>`, `container:<name>`, `website`, `joplin`, `rootfs`, `integrity`, `usb_clone`, `device:<alias>`, `system`, `tailscale`. Presence of a key means "currently in alert". A problem re-notifies only after `COOLDOWN` (24h); clearing a key sends the ✅ recovery message. Every new check needs both the alert branch and the `_clear_alert` branch, or it will never recover.
 
 ### Extending
 

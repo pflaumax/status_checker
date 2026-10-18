@@ -52,6 +52,22 @@ DOCKER_ENABLED = bool(DOCKER_CONTAINERS)
 JOPLIN_URL = (config.get("JOPLIN_URL") or "").rstrip("/")
 JOPLIN_ENABLED = bool(JOPLIN_URL)
 
+# LAN devices that should talk to Pi-hole at least once a day, as alias=MAC
+# pairs: WATCH_DEVICES=vacuum=00:aa:bb:cc:dd:ee. Pi-hole's network table maps
+# the MAC to its last DNS query, so a new DHCP address does not matter. The
+# robot vacuum this was written for makes one burst of queries a night and
+# none in between (its longest normal gap over a month was 25.4h), hence a
+# threshold well over a day. Needs Pi-hole; empty or absent switches it off.
+WATCH_DEVICES: dict[str, str] = {
+    alias.strip(): mac.strip().lower()
+    for alias, _, mac in (
+        pair.partition("=") for pair in (config.get("WATCH_DEVICES") or "").split(",")
+    )
+    if alias.strip() and mac.strip()
+}
+WATCH_SILENT_HOURS = float(config.get("WATCH_SILENT_HOURS", "30") or 30)
+WATCH_ENABLED = PIHOLE_ENABLED and bool(WATCH_DEVICES)
+
 # The drive holding /mnt/hdd. Empty disables SMART monitoring. Set it to a
 # /dev/disk/by-id/ path in .env: sdX letters swap between boots. smartctl needs
 # raw device access, hence sudo, and an absolute path because the bot's PATH
@@ -506,6 +522,62 @@ def apply_pihole_blocking(
                 print(f"Pi-hole blocking change failed: {e}")
         text, st = _pihole_panel(session)
         return ok, text, st
+
+
+class DeviceSeen(NamedTuple):
+    last_query: float | None  # epoch; None when Pi-hole has never seen the MAC
+    ip: str | None  # the IPv4 address Pi-hole saw it on most recently
+
+
+def get_watched_devices() -> dict[str, DeviceSeen] | None:
+    """alias -> last DNS activity, from Pi-hole's network table. None when
+    Pi-hole did not answer, which says nothing about the devices themselves."""
+    with _pihole_session() as session:
+        if session.sid is None:
+            return None
+        # Without max_devices the endpoint returns only the first 10 devices.
+        data = _pihole_get(session.sid, "network/devices", {"max_devices": 1000})
+    if data is None:
+        return None
+    by_mac = {
+        str(d.get("hwaddr") or "").lower(): d
+        for d in data.get("devices") or []
+        if isinstance(d, dict)
+    }
+    seen: dict[str, DeviceSeen] = {}
+    for alias, mac in WATCH_DEVICES.items():
+        device = by_mac.get(mac) or {}
+        last = device.get("lastQuery")
+        ips = [
+            i for i in device.get("ips") or []
+            if isinstance(i, dict) and "." in str(i.get("ip") or "")
+        ]
+        ips.sort(key=lambda i: i.get("lastSeen") or 0)
+        seen[alias] = DeviceSeen(
+            float(last) if isinstance(last, (int, float)) and last > 0 else None,
+            str(ips[-1]["ip"]) if ips else None,
+        )
+    return seen
+
+
+def device_is_silent(seen: DeviceSeen) -> bool:
+    if seen.last_query is None:
+        return True
+    return time.time() - seen.last_query >= WATCH_SILENT_HOURS * 3600
+
+
+def ping(ip: str) -> bool:
+    try:
+        r = subprocess.run(
+            ["ping", "-c", "3", "-W", "2", "-q", ip],
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+    except Exception as e:
+        print(f"ping {ip} failed: {e}")
+        return False
+    return r.returncode == 0
 
 
 def get_status_message() -> str:

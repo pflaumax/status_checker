@@ -217,6 +217,7 @@ taking the file down with it.
 - The drive reports bad sectors, cable errors, a failed self-assessment, or runs hot
 - Pi-hole is not responding, or rejects the password (reported as separate causes)
 - Pi-hole blocking is disabled **indefinitely**, or reports a `failed` / `unknown` state
+- A device in `WATCH_DEVICES` has made no DNS query through Pi-hole for `WATCH_SILENT_HOURS` (30h); a ping tells "off Wi-Fi" from "on the network but not reaching its cloud"
 
 A timed pause is deliberate, so it is neither alerted nor reported as a recovery —
 the "blocking is back on" message waits until filtering is genuinely on again.
@@ -232,6 +233,18 @@ Example alert:
 ⚠️ CPU overloaded for 15m+! (Load: 4.7)
 
 🕐 18:03
+```
+
+A watched device going quiet:
+
+```
+🔌 vacuum has dropped off the network
+
+No DNS query for 30h (last one Oct 14 05:08).
+No answer to ping at 192.168.1.50: it is probably off Wi-Fi.
+
+Check the router's Wireless Log before restarting it.
+🕐 11:30
 ```
 
 ### Cron setup
@@ -257,6 +270,7 @@ Since cron bypasses `uv`, new dependencies only reach it after a `uv sync`.
 cp .env.example .env
 # fill in TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WEBSITE_URL, PIHOLE_PASSWORD
 # optional: JOPLIN_URL (public Joplin Server address; empty disables its check)
+# optional: WATCH_DEVICES (alias=MAC pairs to alert on when they go quiet in Pi-hole)
 uv sync
 ```
 

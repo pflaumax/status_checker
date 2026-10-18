@@ -14,19 +14,23 @@ from common import (
     SERVICES,
     USB_CLONE_ENABLED,
     USB_CLONE_MAX_DAYS,
+    WATCH_ENABLED,
     _get_tailscale_ip,
     _rootfs_line,
     _usb_clone_line,
     check_joplin,
     check_service,
     check_website,
+    device_is_silent,
     get_docker_states,
     get_integrity_status,
     get_pihole_status,
     get_rootfs_status,
     get_smart_alerts,
     get_system_alerts,
+    get_watched_devices,
     integrity_problem,
+    ping,
     rootfs_has_errors,
     send_message,
     usb_clone_overdue,
@@ -151,6 +155,42 @@ if PIHOLE_ENABLED:
             # Recovery only once filtering is genuinely back on -- a timed
             # pause must not clear the alert.
             _clear_alert(state, "pihole:blocking", "<b>Pi-hole</b> blocking is back on!")
+
+# --- Watched LAN devices (silence in Pi-hole's network table) ---
+# A Pi-hole that did not answer is alerted above and says nothing about the
+# devices, so their keys stay as they are until it answers again.
+if WATCH_ENABLED:
+    for alias, seen in (get_watched_devices() or {}).items():
+        key = f"device:{alias}"
+        name = html.escape(alias)
+        if not device_is_silent(seen):
+            _clear_alert(state, key, f"<b>{name}</b> is back on the network!")
+            continue
+        if not _should_alert(state, key):
+            continue
+        if seen.last_query is None:
+            detail = "Pi-hole has never seen it: check its MAC in WATCH_DEVICES."
+        else:
+            hours = int((time.time() - seen.last_query) // 3600)
+            since = datetime.fromtimestamp(seen.last_query).strftime("%b %d %H:%M")
+            detail = f"No DNS query for {hours}h (last one {since})."
+            # Ping only tells the two failures apart; silence alone decides.
+            if seen.ip and ping(seen.ip):
+                detail += (
+                    f"\nIt answers ping at {html.escape(seen.ip)}, so it is on"
+                    " the network but not talking to its cloud."
+                )
+            elif seen.ip:
+                detail += (
+                    f"\nNo answer to ping at {html.escape(seen.ip)}:"
+                    " it is probably off Wi-Fi."
+                )
+        send_message(
+            f"🔌 <b>{name}</b> has dropped off the network\n\n{detail}\n\n"
+            "Check the router's Wireless Log before restarting it.\n"
+            f"🕐 {now}"
+        )
+        _mark_alerted(state, key)
 
 # --- Drive health ---
 smart_alerts = get_smart_alerts()
