@@ -106,6 +106,11 @@ def is_owner(telegram_id: Any) -> bool:
     return str(telegram_id) == CHAT_ID
 
 
+def redact(error: object) -> str:
+    """requests puts the full URL, bot token included, into its error text."""
+    return str(error).replace(BOT_TOKEN, "<token>")
+
+
 def _telegram(method: str, payload: dict[str, Any]) -> None:
     try:
         r = requests.post(
@@ -117,7 +122,7 @@ def _telegram(method: str, payload: dict[str, Any]) -> None:
             return  # redrew a panel that had not changed; nothing to report
         r.raise_for_status()
     except Exception as e:
-        print(f"Telegram {method} failed: {e}")
+        print(f"Telegram {method} failed: {redact(e)}")
 
 
 def send_message(text: str, reply_markup: dict[str, Any] | None = None) -> None:

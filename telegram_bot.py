@@ -18,6 +18,7 @@ from common import (
     get_status_message,
     get_system_message,
     is_owner,
+    redact,
     send_message,
     set_bot_commands,
 )
@@ -128,7 +129,7 @@ def main() -> None:
                     continue
                 handle_command(msg.get("text", ""))
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error: {redact(e)}")
             time.sleep(5)
 
 
