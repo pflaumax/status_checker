@@ -72,6 +72,9 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
 - DB dumps: age of the newest file in each `DUMP_DIRS` directory (the nightly
   dumps of the site, Joplin and sprout). ⚠️ and one alert a day once any is older
   than `DUMP_MAX_HOURS` (26) or missing. Empty `DUMP_DIRS` disables it
+- Off-site backup: the last run of `reiberry-rbi-backup/scripts/restic-backup.sh`,
+  read from `RESTIC_STATE`. ⚠️ and one alert a day when the run failed, when it
+  is older than `RESTIC_MAX_HOURS` (26), or when no run is recorded. Empty disables it
 - Git checkouts: every repo under `GIT_REPOS_DIR` compared with its GitHub
   branch: uncommitted files, commits not pushed, commits not pulled, or a last
   fetch older than 3 days. The cron pass fetches each repo once a day and alerts

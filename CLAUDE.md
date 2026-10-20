@@ -203,6 +203,14 @@ cron pass alerts under `dumps` when the newest file in any of them is older than
 `DUMP_MAX_HOURS` (26: a day plus slack) or the directory is empty or unreadable.
 An unmounted HDD therefore shows up here too, as "no dump found".
 
+`RESTIC_STATE` is the JSON that `reiberry-rbi-backup/scripts/restic-backup.sh`
+writes after each nightly run (`time`, `status`, `error`, `snapshot`,
+`missing`). The cron pass alerts under `offsite` when `status` is not `ok`, when
+the run is older than `RESTIC_MAX_HOURS`, or when the file is missing or
+unparseable. Leave it empty until the backup is set up, or it nags from day one.
+The script keeps repository URLs out of `error` (a rest-server URL can carry a
+password), so the text is safe to send.
+
 `HEARTBEAT_URL` is pinged after `_save_state()`, as the last line of
 `status_checker.py`: a pass that crashes earlier never pings, and an external
 dead man's switch (Healthchecks.io, period 30 min) notices the silence even when

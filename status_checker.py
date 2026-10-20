@@ -14,6 +14,7 @@ from common import (
     INTEGRITY_ENABLED,
     JOPLIN_ENABLED,
     PIHOLE_ENABLED,
+    RESTIC_ENABLED,
     ROOTFS_ENABLED,
     SERVICES,
     USB_CLONE_ENABLED,
@@ -23,10 +24,12 @@ from common import (
     _get_tailscale_ip,
     _rootfs_line,
     _usb_clone_line,
+    backup_problem,
     check_joplin,
     check_service,
     check_website,
     device_is_silent,
+    get_backup_status,
     get_docker_states,
     get_dump_ages,
     get_git_drift,
@@ -287,6 +290,20 @@ if DUMPS_ENABLED:
             _mark_alerted(state, "dumps")
     else:
         _clear_alert(state, "dumps", "Database dumps are fresh again.")
+
+# --- Off-site backup (restic) ---
+if RESTIC_ENABLED:
+    offsite = backup_problem(get_backup_status())
+    if offsite:
+        if _should_alert(state, "offsite"):
+            send_message(
+                f"☁️ <b>Off-site backup:</b> {html.escape(offsite)}\n\n"
+                "Check <code>journalctl -t restic-backup</code> on the Pi.\n"
+                f"🕐 {now}"
+            )
+            _mark_alerted(state, "offsite")
+    else:
+        _clear_alert(state, "offsite", "Off-site backup is fine again.")
 
 # --- Git checkouts vs GitHub ---
 # Alerts only once the drift has lasted GIT_DRIFT_GRACE, so a deploy in progress

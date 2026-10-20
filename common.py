@@ -764,6 +764,8 @@ def get_system_message() -> str:
         lines.append(_usb_clone_line())
     if DUMPS_ENABLED:
         lines.append(_dumps_line(get_dump_ages()))
+    if RESTIC_ENABLED:
+        lines.append(_backup_line(get_backup_status()))
     if GIT_DRIFT_ENABLED:
         lines.append(_git_drift_line(get_git_drift()))
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
@@ -1473,6 +1475,53 @@ def _dumps_line(ages: list[DumpAge]) -> str:
         return f"🗄 <b>DB dumps:</b> ⚠️ {shown}"
     oldest = max(a.hours or 0 for a in ages)
     return f"🗄 <b>DB dumps:</b> ✅ all {len(ages)} fresh (oldest {oldest:.0f}h)"
+
+
+# Written nightly by reiberry-rbi-backup/scripts/restic-backup.sh (the off-site
+# restic backup). The bot only reads it. Empty or absent disables it, so nothing
+# nags before the backup is set up.
+RESTIC_STATE = config.get("RESTIC_STATE") or ""
+RESTIC_MAX_HOURS = float(config.get("RESTIC_MAX_HOURS", "26") or 26)
+RESTIC_ENABLED = bool(RESTIC_STATE)
+
+
+class BackupStatus(NamedTuple):
+    hours: float  # since the last run finished
+    ok: bool
+    error: str
+    snapshot: str
+
+
+def get_backup_status() -> BackupStatus | None:
+    """The last off-site backup run, or None if it never ran or is unreadable."""
+    try:
+        data = json.loads(Path(RESTIC_STATE).read_text())
+        when = datetime.strptime(data["time"], "%Y-%m-%dT%H:%M:%S%z")
+        ok = data.get("status") == "ok"
+        error = str(data.get("error") or "")
+        snapshot = str(data.get("snapshot") or "")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    hours = (datetime.now(when.tzinfo) - when).total_seconds() / 3600
+    return BackupStatus(hours, ok, error, snapshot)
+
+
+def backup_problem(status: BackupStatus | None) -> str | None:
+    """Why the off-site backup needs attention, or None when it is fine."""
+    if status is None:
+        return "no off-site backup recorded"
+    if not status.ok:
+        return status.error or "the last backup failed"
+    if status.hours >= RESTIC_MAX_HOURS:
+        return f"last backup was {status.hours:.0f}h ago"
+    return None
+
+
+def _backup_line(status: BackupStatus | None) -> str:
+    problem = backup_problem(status)
+    if status is None or problem:
+        return f"☁️ <b>Off-site backup:</b> ⚠️ {html.escape(problem or '')}"
+    return f"☁️ <b>Off-site backup:</b> ✅ {status.hours:.0f}h ago (snapshot {html.escape(status.snapshot)})"
 
 
 # A dead man's switch such as Healthchecks.io. The cron pass requests this URL
