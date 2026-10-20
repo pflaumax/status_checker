@@ -69,6 +69,11 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
   reminder a day until a fresh clone. The date is read from `USB_CLONE_STAMP`,
   written by `reiberry-rbi-backup/scripts/weekly-clone.sh`; empty disables it. Use its
   `/dev/disk/by-id/` path, not `/dev/sdX`: the letters swap between boots
+- Git checkouts: every repo under `GIT_REPOS_DIR` compared with its GitHub
+  branch: uncommitted files, commits not pushed, commits not pulled, or a last
+  fetch older than 3 days. The cron pass fetches each repo once a day and alerts
+  once the drift has lasted 6 hours; `/system` only reads. Files that differ on
+  purpose go in `GIT_DRIFT_IGNORE` as `repo/path`. Empty `GIT_REPOS_DIR` disables it
 
 ### `/pihole` — DNS filtering
 

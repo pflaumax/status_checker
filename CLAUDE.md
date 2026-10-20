@@ -193,6 +193,24 @@ or absent**, like `JOPLIN_URL`, so a pull before the `.env` edit sends no false 
 An old clone is expected, so the reminder is phrased as one and uses the normal
 24h cooldown; its recovery message fires once a fresh clone lands.
 
+### Git checkouts vs GitHub
+
+Deploy is `git pull` on the Pi, so a fix made there and never committed lives
+only on the SD card, and a push nobody pulled is not running. `get_git_drift()`
+walks every repo under `GIT_REPOS_DIR` and reports uncommitted files
+(`git --no-optional-locks status`, so the index is never rewritten), commits
+ahead of or behind `@{u}`, and a last fetch older than `GIT_FETCH_MAX_DAYS` (3),
+which is how a broken fetch (wrong SSH key, see the deploy-key note in
+`../CLAUDE.md`) shows up. Only the cron pass fetches, and only when
+`.git/FETCH_HEAD` is older than a day: every fetch rewrites that file on the SD
+card. `/system` reads what the last fetch left.
+
+The alert key is `git_drift`. It fires only after the drift has lasted
+`GIT_DRIFT_GRACE` (6h), tracked under a second key `git_drift:since`, so a
+deploy in progress stays quiet. `GIT_DRIFT_IGNORE` lists `repo/path` pairs that
+differ on purpose; on the Pi it holds `funko-bot/funko-bot.service`, whose copy
+in git is a template. Off when `GIT_REPOS_DIR` is empty or absent.
+
 ### Watched LAN devices
 
 Added for a robot vacuum that drops off Wi-Fi every week or two and is only

@@ -7,6 +7,8 @@ from pathlib import Path
 from common import (
     DOCKER_CONTAINERS,
     DOCKER_ENABLED,
+    GIT_DRIFT_ENABLED,
+    GIT_DRIFT_GRACE,
     INTEGRITY_ENABLED,
     JOPLIN_ENABLED,
     PIHOLE_ENABLED,
@@ -23,6 +25,7 @@ from common import (
     check_website,
     device_is_silent,
     get_docker_states,
+    get_git_drift,
     get_integrity_status,
     get_pihole_status,
     get_rootfs_status,
@@ -259,6 +262,30 @@ if USB_CLONE_ENABLED:
             _mark_alerted(state, "usb_clone")
     else:
         _clear_alert(state, "usb_clone", "USB clone is up to date again.")
+
+# --- Git checkouts vs GitHub ---
+# Alerts only once the drift has lasted GIT_DRIFT_GRACE, so a deploy in progress
+# stays quiet; when it began is kept in the state file under its own key. An
+# unreadable directory says nothing either way and leaves both keys alone.
+if GIT_DRIFT_ENABLED:
+    git = get_git_drift(fetch=True)
+    if git is not None and git.repos:
+        since = state.setdefault("git_drift:since", time.time())
+        if time.time() - since >= GIT_DRIFT_GRACE and _should_alert(state, "git_drift"):
+            listed = "\n".join(
+                f"• <b>{html.escape(name)}</b>: {html.escape(', '.join(problems))}"
+                for name, problems in git.repos.items()
+            )
+            send_message(
+                "🔀 <b>Pi checkouts differ from GitHub</b>\n\n"
+                f"{listed}\n\n"
+                "Commit and push, or pull, on the Pi.\n"
+                f"🕐 {now}"
+            )
+            _mark_alerted(state, "git_drift")
+    elif git is not None:
+        state.pop("git_drift:since", None)
+        _clear_alert(state, "git_drift", "Pi checkouts match GitHub again.")
 
 # --- Tailscale check ---
 if not _get_tailscale_ip():

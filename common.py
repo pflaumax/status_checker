@@ -762,6 +762,8 @@ def get_system_message() -> str:
         lines.append(_integrity_line(get_integrity_status()))
     if USB_CLONE_ENABLED:
         lines.append(_usb_clone_line())
+    if GIT_DRIFT_ENABLED:
+        lines.append(_git_drift_line(get_git_drift()))
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
     lines.append(_fan_line(temp))
     lines.append("───────────────────")
@@ -1315,3 +1317,105 @@ def _integrity_line(status: IntegrityStatus | None) -> str:
     if problem:
         return f"🧬 <b>File integrity:</b> ⚠️ {problem} (scan {when})"
     return f"🧬 <b>File integrity:</b> ✅ {when} ({status.date})"
+
+
+# Every checkout under GIT_REPOS_DIR should match GitHub. Deploy is a plain git
+# pull, so a fix made on the Pi and never committed lives only on the SD card,
+# and a push that was never pulled is not running. A fetch rewrites
+# .git/FETCH_HEAD, so the cron pass fetches each repo at most once a day (that
+# file's mtime says when) and otherwise counts ahead/behind against the refs of
+# the last fetch; /system never fetches. Empty or absent disables the check.
+GIT_REPOS_DIR = config.get("GIT_REPOS_DIR") or ""
+GIT_DRIFT_ENABLED = bool(GIT_REPOS_DIR)
+# repo/path pairs that differ from git on purpose, comma-separated.
+GIT_DRIFT_IGNORE: set[str] = {
+    p.strip() for p in (config.get("GIT_DRIFT_IGNORE") or "").split(",") if p.strip()
+}
+GIT_FETCH_EVERY = 24 * 3600
+GIT_FETCH_MAX_DAYS = 3  # an older fetch means fetching itself is broken
+GIT_DRIFT_GRACE = 6 * 3600  # drift is normal for a while mid-deploy
+
+
+class GitDrift(NamedTuple):
+    checked: int
+    repos: dict[str, list[str]]  # only the checkouts that differ
+
+
+def _git(repo: Path, *args: str, timeout: int = 15) -> subprocess.CompletedProcess[str]:
+    # --no-optional-locks keeps status from rewriting the index on every pass.
+    return subprocess.run(
+        ["git", "-C", str(repo), "--no-optional-locks", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
+    )
+
+
+def _last_fetch_age(repo: Path) -> float:
+    try:
+        return time.time() - (repo / ".git" / "FETCH_HEAD").stat().st_mtime
+    except OSError:
+        return math.inf
+
+
+def _repo_drift(repo: Path, fetch: bool) -> list[str]:
+    """What differs between a checkout and its upstream; empty when in sync."""
+    if fetch and _last_fetch_age(repo) >= GIT_FETCH_EVERY:
+        r = _git(repo, "fetch", "--quiet", timeout=60)
+        if r.returncode != 0:
+            print(f"git fetch in {repo.name} failed: {r.stderr.strip()}")
+
+    status = _git(repo, "status", "--porcelain")
+    if status.returncode != 0:
+        return ["git status failed"]
+    problems = []
+    paths = [line[3:].split(" -> ")[-1] for line in status.stdout.splitlines()]
+    changed = [p for p in paths if f"{repo.name}/{p}" not in GIT_DRIFT_IGNORE]
+    if changed:
+        problems.append(f"{len(changed)} uncommitted")
+
+    counts = _git(repo, "rev-list", "--left-right", "--count", "HEAD...@{u}")
+    if counts.returncode != 0:
+        problems.append("no upstream branch")
+    else:
+        ahead, behind = (int(n) for n in counts.stdout.split())
+        if ahead:
+            problems.append(f"{ahead} not pushed")
+        if behind:
+            problems.append(f"{behind} not pulled")
+
+    days = _last_fetch_age(repo) / 86400
+    if days >= GIT_FETCH_MAX_DAYS:
+        problems.append("never fetched" if math.isinf(days) else f"last fetch {int(days)}d ago")
+    return problems
+
+
+def get_git_drift(fetch: bool = False) -> GitDrift | None:
+    """Checkouts under GIT_REPOS_DIR that differ from GitHub; None if unreadable."""
+    try:
+        repos = sorted(p for p in Path(GIT_REPOS_DIR).iterdir() if (p / ".git").is_dir())
+    except OSError as e:
+        print(f"Cannot list {GIT_REPOS_DIR}: {e}")
+        return None
+    drift: dict[str, list[str]] = {}
+    for repo in repos:
+        try:
+            problems = _repo_drift(repo, fetch)
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
+            print(f"git check of {repo.name} failed: {e}")
+            problems = ["check failed"]
+        if problems:
+            drift[repo.name] = problems
+    return GitDrift(len(repos), drift)
+
+
+def _git_drift_line(status: GitDrift | None) -> str:
+    if status is None:
+        return "🔀 <b>Git checkouts:</b> unavailable"
+    if not status.repos:
+        return f"🔀 <b>Git checkouts:</b> ✅ all {status.checked} match GitHub"
+    shown = "; ".join(
+        f"{html.escape(name)}: {', '.join(problems)}" for name, problems in status.repos.items()
+    )
+    return f"🔀 <b>Git checkouts:</b> ⚠️ {shown}"
