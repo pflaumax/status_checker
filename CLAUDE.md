@@ -193,6 +193,22 @@ or absent**, like `JOPLIN_URL`, so a pull before the `.env` edit sends no false 
 An old clone is expected, so the reminder is phrased as one and uses the normal
 24h cooldown; its recovery message fires once a fresh clone lands.
 
+### Database dumps and the heartbeat
+
+The dump scripts (`reiberry-rbi-backup/scripts/backup-website-db.sh`,
+`joplin-server/scripts/backup.sh`, `sprout/scripts/backup-db.sh`, 04:30-04:50)
+log only to the journal, where a failure reaches nobody. `DUMP_DIRS`
+(`name=path` pairs) lists their directories, SD and HDD copies alike, and the
+cron pass alerts under `dumps` when the newest file in any of them is older than
+`DUMP_MAX_HOURS` (26: a day plus slack) or the directory is empty or unreadable.
+An unmounted HDD therefore shows up here too, as "no dump found".
+
+`HEARTBEAT_URL` is pinged after `_save_state()`, as the last line of
+`status_checker.py`: a pass that crashes earlier never pings, and an external
+dead man's switch (Healthchecks.io, period 30 min) notices the silence even when
+the Pi is off. The URL contains the check's secret, so `ping_heartbeat()` prints
+only the exception type, never the URL. Both are off when their key is empty.
+
 ### Git checkouts vs GitHub
 
 Deploy is `git pull` on the Pi, so a fix made there and never committed lives

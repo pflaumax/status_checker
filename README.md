@@ -69,6 +69,9 @@ The Joplin, container and Pi-hole rows only appear when those features are confi
   reminder a day until a fresh clone. The date is read from `USB_CLONE_STAMP`,
   written by `reiberry-rbi-backup/scripts/weekly-clone.sh`; empty disables it. Use its
   `/dev/disk/by-id/` path, not `/dev/sdX`: the letters swap between boots
+- DB dumps: age of the newest file in each `DUMP_DIRS` directory (the nightly
+  dumps of the site, Joplin and sprout). ⚠️ and one alert a day once any is older
+  than `DUMP_MAX_HOURS` (26) or missing. Empty `DUMP_DIRS` disables it
 - Git checkouts: every repo under `GIT_REPOS_DIR` compared with its GitHub
   branch: uncommitted files, commits not pushed, commits not pulled, or a last
   fetch older than 3 days. The cron pass fetches each repo once a day and alerts

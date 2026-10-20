@@ -7,6 +7,8 @@ from pathlib import Path
 from common import (
     DOCKER_CONTAINERS,
     DOCKER_ENABLED,
+    DUMP_MAX_HOURS,
+    DUMPS_ENABLED,
     GIT_DRIFT_ENABLED,
     GIT_DRIFT_GRACE,
     INTEGRITY_ENABLED,
@@ -17,6 +19,7 @@ from common import (
     USB_CLONE_ENABLED,
     USB_CLONE_MAX_DAYS,
     WATCH_ENABLED,
+    _dump_age_text,
     _get_tailscale_ip,
     _rootfs_line,
     _usb_clone_line,
@@ -25,6 +28,7 @@ from common import (
     check_website,
     device_is_silent,
     get_docker_states,
+    get_dump_ages,
     get_git_drift,
     get_integrity_status,
     get_pihole_status,
@@ -34,8 +38,10 @@ from common import (
     get_watched_devices,
     integrity_problem,
     ping,
+    ping_heartbeat,
     rootfs_has_errors,
     send_message,
+    stale_dumps,
     usb_clone_overdue,
 )
 
@@ -263,6 +269,25 @@ if USB_CLONE_ENABLED:
     else:
         _clear_alert(state, "usb_clone", "USB clone is up to date again.")
 
+# --- Nightly database dumps ---
+if DUMPS_ENABLED:
+    stale = stale_dumps(get_dump_ages())
+    if stale:
+        if _should_alert(state, "dumps"):
+            listed = "\n".join(
+                f"• <b>{html.escape(a.name)}</b>: {_dump_age_text(a)}" for a in stale
+            )
+            send_message(
+                f"🗄 <b>Database dumps older than {DUMP_MAX_HOURS:.0f}h</b>\n\n"
+                f"{listed}\n\n"
+                "Check <code>journalctl -t website-db-backup</code>, <code>-t joplin-backup</code>\n"
+                "and <code>-t sprout-db-backup</code> on the Pi.\n"
+                f"🕐 {now}"
+            )
+            _mark_alerted(state, "dumps")
+    else:
+        _clear_alert(state, "dumps", "Database dumps are fresh again.")
+
 # --- Git checkouts vs GitHub ---
 # Alerts only once the drift has lasted GIT_DRIFT_GRACE, so a deploy in progress
 # stays quiet; when it began is kept in the state file under its own key. An
@@ -296,3 +321,6 @@ else:
     _clear_alert(state, "tailscale", "<b>Tailscale</b> is back online!")
 
 _save_state(state)
+
+# Last on purpose: a pass that crashed above never pings.
+ping_heartbeat()

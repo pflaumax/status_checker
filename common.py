@@ -762,6 +762,8 @@ def get_system_message() -> str:
         lines.append(_integrity_line(get_integrity_status()))
     if USB_CLONE_ENABLED:
         lines.append(_usb_clone_line())
+    if DUMPS_ENABLED:
+        lines.append(_dumps_line(get_dump_ages()))
     if GIT_DRIFT_ENABLED:
         lines.append(_git_drift_line(get_git_drift()))
     lines.append(f"{temp_icon} <b>Temp:</b> {temp_str}")
@@ -1419,3 +1421,71 @@ def _git_drift_line(status: GitDrift | None) -> str:
         f"{html.escape(name)}: {', '.join(problems)}" for name, problems in status.repos.items()
     )
     return f"🔀 <b>Git checkouts:</b> ⚠️ {shown}"
+
+
+# Nightly database dumps from cron (04:30-04:50): the site's pg_dump, Joplin's
+# and sprout's SQLite copy. Each script only logs to the journal, where a failure
+# reaches nobody, so the age of the newest file in each directory is what tells.
+# DUMP_DIRS holds name=directory pairs, comma-separated; empty or absent disables it.
+DUMP_DIRS: dict[str, str] = {
+    name.strip(): path.strip()
+    for name, _, path in (
+        pair.partition("=") for pair in (config.get("DUMP_DIRS") or "").split(",")
+    )
+    if name.strip() and path.strip()
+}
+DUMP_MAX_HOURS = float(config.get("DUMP_MAX_HOURS", "26") or 26)
+DUMPS_ENABLED = bool(DUMP_DIRS)
+
+
+class DumpAge(NamedTuple):
+    name: str
+    hours: float | None  # None: no file, or the directory cannot be read
+
+
+def get_dump_ages() -> list[DumpAge]:
+    ages = []
+    for name, path in DUMP_DIRS.items():
+        try:
+            newest = max(
+                (p.stat().st_mtime for p in Path(path).iterdir() if p.is_file()),
+                default=None,
+            )
+        except OSError as e:
+            print(f"Cannot read dumps in {path}: {e}")
+            newest = None
+        ages.append(DumpAge(name, None if newest is None else (time.time() - newest) / 3600))
+    return ages
+
+
+def stale_dumps(ages: list[DumpAge]) -> list[DumpAge]:
+    return [a for a in ages if a.hours is None or a.hours >= DUMP_MAX_HOURS]
+
+
+def _dump_age_text(age: DumpAge) -> str:
+    return "no dump found" if age.hours is None else f"newest is {age.hours:.0f}h old"
+
+
+def _dumps_line(ages: list[DumpAge]) -> str:
+    stale = stale_dumps(ages)
+    if stale:
+        shown = "; ".join(f"{html.escape(a.name)}: {_dump_age_text(a)}" for a in stale)
+        return f"🗄 <b>DB dumps:</b> ⚠️ {shown}"
+    oldest = max(a.hours or 0 for a in ages)
+    return f"🗄 <b>DB dumps:</b> ✅ all {len(ages)} fresh (oldest {oldest:.0f}h)"
+
+
+# A dead man's switch such as Healthchecks.io. The cron pass requests this URL
+# as its very last step, so silence there means the monitoring itself stopped:
+# cron, the venv, or the whole Pi. The URL carries the check's secret, so it is
+# never printed. Empty or absent disables it.
+HEARTBEAT_URL = config.get("HEARTBEAT_URL") or ""
+
+
+def ping_heartbeat() -> None:
+    if not HEARTBEAT_URL:
+        return
+    try:
+        requests.get(HEARTBEAT_URL, timeout=10)
+    except requests.RequestException as e:
+        print(f"Heartbeat ping failed: {type(e).__name__}")
